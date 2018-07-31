@@ -1,0 +1,53 @@
+#!/usr/bin/ruby
+
+# Process command-line arguments.
+
+require 'optparse'
+
+class Arguments
+  def initialize
+    @directory = nil
+    @memory = false
+    # History location argument? Or in directory?
+  end
+
+  def parse(args)
+    parser = OptionParser.new do |opts|
+      opts.banner = "Usage: datalackeyshell [options]"
+      opts.separator ""
+      opts.separator "Options:"
+      opts.on("-m", "--memory", "Store data in memory.") do
+        @memory = true
+      end
+      opts.on("-d", "--directory [DIR]", "Store data under (working) directory.") do |d|
+        @directory = d || ''
+      end
+      opts.on_tail("-h", "--help", "Print this help and exit.") do
+        puts opts
+        exit
+      end
+    end
+    parser.parse!(args)
+    # Perform sanity checks on the values.
+    if @memory and not @directory.nil?
+      puts "Cannot use both --memory and --directory."
+      exit
+    end
+    if not @memory
+      if @directory.nil?
+        @directory = Dir.pwd
+      elsif not Dir.exist? @directory
+        puts "Given directory does not exist: #{@directory}"
+        exit 1
+      end
+    end
+  end
+end
+
+arguments = Arguments.new
+arguments.parse(ARGV)
+
+# Shell class for getting input. Handles history?
+
+# Datalackey class that deals with running it and allowing I/O.
+
