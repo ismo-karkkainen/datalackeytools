@@ -1,14 +1,13 @@
 #!/usr/bin/ruby
 
-# Process command-line arguments.
-
 require 'optparse'
+require 'readline'
+require 'shellwords'
 
 class Arguments
   def initialize
     @directory = nil
     @memory = false
-    # History location argument? Or in directory?
   end
 
   def parse(args)
@@ -47,7 +46,128 @@ end
 arguments = Arguments.new
 arguments.parse(ARGV)
 
-# Shell class for getting input. Handles history?
 
 # Datalackey class that deals with running it and allowing I/O.
+# Store error output and normal output until something reads it.
+# Allow input to be sent and do it as is.
 
+# Presumably the shell object will deal with identifiers.
+# Maybe have a translator object that deals with forming messages and
+# splitting the output into whatever it is. Errors and notifications.
+
+# Declare command handler classes here as well as the mapping.
+$handler = Hash.new
+$exiting = false
+
+class Handler
+  def initialize(usage_text, help_text)
+    @help_text = help_text
+    @usage_text = usage_text
+  end
+
+  def help
+    puts "#{@usage_text} : #{@help_text}"
+  end
+
+  def usage
+    puts "Usage: #{@usage_text}"
+  end
+end
+
+class HelpHandler < Handler
+  def initialize
+    super('help', "Print command help.")
+  end
+
+  def handle(parts)
+    $handler.keys.sort.each do |key|
+      $handler[key].help
+    end
+  end
+end
+
+$handler['help'] = HelpHandler.new
+
+class ExitHandler < Handler
+  attr_reader :code
+
+  def initialize
+    super("exit [code]", "Waits for datalackey to finish, exits with code.")
+    @code = 0
+  end
+
+  def handle(parts)
+    $exiting = true
+    return if parts.length == 1
+    if parts.length != 2
+      usage
+      $exiting = false
+      return
+    end
+    begin
+      @code = Integer(parts[1])
+    rescue ArgumentError
+      usage
+      $exiting = false
+    end
+  end
+end
+
+$handler['exit'] = ExitHandler.new
+
+while line = Readline.readline("> ", true)
+  parts = line.shellsplit
+  next if parts.length == 0
+  if $handler.has_key? parts[0]
+    $handler[parts[0]].handle(parts)
+  else
+    puts "Unknown command: #{parts[0]}"
+  end
+  break if $exiting
+
+  # Parse line into shell commands.
+  # Trim input and split, but should respect quotes and escaping.
+  # Allow separation of commands using semicolon?
+
+  # datalackey direct commands:
+  # {} (set label=value ...)
+  # Get (cat label ...)
+  # Rename (mv label new)
+  # Delete (rm label)
+  # List (ls [pattern])
+  # Run (run) See below for all parts.
+  # Processes (ps)
+  # Terminate (kill identifier)
+  # Feed (feed identifier [name=]label|direct name=value ...)
+  # EndFeed (eof identifier)
+  # StorageInfo (du) ?
+  # Version (version) Prints this and datalackey versions.
+  # NoOperation (ping) ?
+  # Other commands for convenience with above:
+  # echo on|off|last Print the command sent to datalackey always|never|last.
+  # Run helper commands.
+  # input name=label|direct name=value ... Construct/clear input mapping.
+  # input+ name=label|direct name=value ... Append to input mapping.
+  # output label=name ... Construct/clear output mapping.
+  # output+ label=name ... Append to output mapping.
+  # format in|out json When there is an alternative.
+  # channel in|out pipe|shared_memory When there is an alternative.
+  # env var=value ... Contruct/clear environment.
+  # env+ var=value ... Append to environment.
+  # args arguments as they are... Construct/clear program argument list.
+  # args+ arguments as they are... Append to program argument list.
+  # run program [eof] Run using input, output, format, channel, env, args.
+  #  Optional eof indicates to close feed in the same call.
+  # print input, output, format, channel, env, args Print argument state or
+  #  without arguments print them all.
+  # recall program input output format channel env args Fetches value from
+  #  last run of program, without argumets fetches all.
+  # re-run program ... Like "recall program ..." and "run program" so uses
+  #  current for parts that have not been recalled.
+  #  recall allows for editing values, re-run direct re-use
+  # history [pattern] Shows history matching the pattern.
+end
+
+# Close datalackey input.
+# Wait for datalackey to finish.
+exit $handler['exit'].code
