@@ -3,11 +3,16 @@
 require 'optparse'
 require 'readline'
 require 'shellwords'
+require 'open3'
 
 class Arguments
+  attr_reader :directory, :memory, :lackey, :permissions
+
   def initialize
     @directory = nil
     @memory = false
+    @lackey = nil
+    @permissions = nil
   end
 
   def parse(args)
@@ -25,11 +30,17 @@ class Arguments
         puts opts
         exit
       end
+      opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
+        @lackey = e
+      end
+      opts.on("-p", "--permissions MODE", [:user, :group, :other], "Use permissions extended to (user, group, other) for files.") do |p|
+        @permissions = { :user => "600", :group => "660", :other => "666" }[p]
+      end
     end
     parser.parse!(args)
     # Perform sanity checks on the values.
-    if @memory and not @directory.nil?
-      puts "Cannot use both --memory and --directory."
+    if @memory and not (@directory.nil? and @permissions.nil?)
+      puts "Cannot use both --memory and --directory or --permissions."
       exit
     end
     if not @memory
@@ -39,6 +50,7 @@ class Arguments
         puts "Given directory does not exist: #{@directory}"
         exit 1
       end
+      @permissions = "600" if @permissions == nil
     end
   end
 end
@@ -46,7 +58,69 @@ end
 arguments = Arguments.new
 arguments.parse(ARGV)
 
+exe = arguments.lackey
+if exe == nil
+  dirs = [ '/usr/local/libexec', '/usr/libexec' ]
+  dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
+  for k in 0 ... dirs.length
+    exe = File.join(dirs[k], "datalackey")
+    break if File.exist?(exe) and File.executable?(exe)
+    exe = nil
+  end
+  puts("datalackey not found.") if exe == nil
+else
+  if not File.exist?(exe) or not File.executable?(exe)
+    puts "Not found or not an executable: #{exe}"
+  end
+end
+exit(1) if exe == nil
 
+class LackeyProcess
+  attr_reader :exit_code
+
+  def initialize(exe, directory, permissions, memory)
+    @accum_stdout = []
+    @accum_stderr = []
+    args = [ exe,
+        '--command-in', 'stdin', 'JSON', '--command-out', 'stdout', 'JSON' ]
+    args.push('--memory') if memory
+    args.concat([ '--directory', directory ]) if directory != nil
+    args.concat([ '--permissions', permissions ]) if not memory
+    @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*args)
+    @read_stdout = Thread.new do
+      until (raw = @stdout.gets(nil)).nil? do
+        @accum_stdout.push(raw)
+        # Must accumulate full lines to get JSON objects.
+      end
+      @stdout.close
+    end
+    @read_stderr = Thread.new do
+      until (raw = @stderr.gets(nil)).nil? do
+        @accum_stderr.push(raw)
+        # This should not happen unless there is an internal error of sorts.
+      end
+      @stderr.close
+    end
+  end
+
+  def relay(message)
+    @stdin.puts message
+    @stdin.flush
+  end
+
+  def finish
+    @stdin.close
+    @wait_thread.join
+    @exit_code = @wait_thread.value.exitstatus
+  end
+
+  def wait_output
+    @read_stdout.join
+    @read_stderr.join
+  end
+end
+
+$lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
 # Datalackey class that deals with running it and allowing I/O.
 # Store error output and normal output until something reads it.
 # Allow input to be sent and do it as is.
@@ -168,6 +242,8 @@ while line = Readline.readline("> ", true)
   # history [pattern] Shows history matching the pattern.
 end
 
-# Close datalackey input.
-# Wait for datalackey to finish.
+$lackey.finish
+$lackey.wait_output
+# Print out the remaining output here.
+puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
 exit $handler['exit'].code
