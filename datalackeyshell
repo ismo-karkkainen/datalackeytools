@@ -4,6 +4,7 @@ require 'optparse'
 require 'readline'
 require 'shellwords'
 require 'open3'
+require 'json'
 
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions
@@ -76,11 +77,12 @@ end
 exit(1) if exe == nil
 
 class LackeyProcess
-  attr_reader :exit_code
+  attr_reader :exit_code, :stdout, :stderr
 
   def initialize(exe, directory, permissions, memory)
     @accum_stdout = []
-    @accum_stderr = []
+    @ready_stdout = Queue.new
+    @unwanted_stderr = Queue.new
     args = [ exe,
         '--command-in', 'stdin', 'JSON', '--command-out', 'stdout', 'JSON' ]
     args.push('--memory') if memory
@@ -88,24 +90,41 @@ class LackeyProcess
     args.concat([ '--permissions', permissions ]) if not memory
     @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*args)
     @read_stdout = Thread.new do
-      until (raw = @stdout.gets(nil)).nil? do
-        @accum_stdout.push(raw)
-        # Must accumulate full lines to get JSON objects.
+      while true do
+        begin
+          raw = @stdout.readpartial(32768)
+        rescue EOFError
+          break
+        end
+        loc = raw.index("\n")
+        until loc.nil? do
+          @accum_stdout.push(raw[0, loc]) if loc > 0 # Newline begins?
+          # Found full line that is not empty.
+          @ready_stdout.push(@accum_stdout.join) if @accum_stdout.length
+          @accum_stdout.clear
+          raw = raw[loc + 1, raw.length - loc - 1]
+          loc = raw.index("\n")
+        end
+        @accum_stdout.push(raw) if raw.length > 0
       end
       @stdout.close
     end
     @read_stderr = Thread.new do
-      until (raw = @stderr.gets(nil)).nil? do
-        @accum_stderr.push(raw)
-        # This should not happen unless there is an internal error of sorts.
+      while true do
+        begin
+          raw = @stderr.readpartial(32768)
+        rescue EOFError
+          break
+        end
+        # There should be nothing so no sweat on processing.
+        @unwanted_stderr.push(raw)
       end
       @stderr.close
     end
   end
 
   def relay(message)
-    @stdin.puts message
-    @stdin.flush
+    @stdin.write message
   end
 
   def finish
@@ -118,20 +137,79 @@ class LackeyProcess
     @read_stdout.join
     @read_stderr.join
   end
+
+  def get_output
+    return nil if @ready_stdout.empty?
+    return @ready_stdout.pop
+  end
+
+  def get_lackey_error
+    return nil if @unwanted_stderr.empty?
+    return @unwanted_stderr.pop
+  end
 end
 
 $lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
-# Datalackey class that deals with running it and allowing I/O.
-# Store error output and normal output until something reads it.
-# Allow input to be sent and do it as is.
 
-# Presumably the shell object will deal with identifiers.
-# Maybe have a translator object that deals with forming messages and
-# splitting the output into whatever it is. Errors and notifications.
+class OutputPresenter
+  def initialize
+    @handlers = Hash.new
+    @present_output = Thread.new do
+      last_stderr = false
+      until $lackey.stdout.closed? and $lackey.stderr.closed?
+        while out = $lackey.get_output
+          break if out.nil?
+          arr = JSON.parse(out)
+          break unless @handlers.has_key? arr[0]
+          keep = @handlers[arr[0]].present(arr)
+          Readline.redisplay
+          last_stderr = false
+        end
+        while out = $lackey.get_lackey_error
+          break if out.nil?
+          puts "STDERR:" unless last_stderr
+          last_stderr = true
+          puts out
+        end
+        sleep 0.1
+      end
+    end
+  end
+
+  def incoming(identifier, handler)
+    @handlers[identifier] = handler
+  end
+
+  def wait_output
+    @present_output.join
+  end
+end
+$presenter = OutputPresenter.new
+
+
+class IdentifierGenerator
+  def initialize
+    @last = 0
+  end
+
+  def get
+    @last += 1
+    return @last
+  end
+end
+$identifier = IdentifierGenerator.new
 
 # Declare command handler classes here as well as the mapping.
 $handler = Hash.new
 $exiting = false
+
+$prompt = '> '
+def prompt_print(message)
+  puts
+  puts message
+  print $prompt
+  STDOUT.flush
+end
 
 class Handler
   def initialize(usage_text, help_text)
@@ -146,6 +224,52 @@ class Handler
   def usage
     puts "Usage: #{@usage_text}"
   end
+
+  def incoming(identifier)
+    $presenter.incoming(identifier, self)
+  end
+
+  def relay(message)
+    $lackey.relay(message)
+  end
+
+  def present_error(parsed_array)
+    prompt_print "ERROR: " + parsed_array[3..parsed_array.length].join(" ")
+    return false
+  end
+
+  def present_invalid(parsed_array)
+    prompt_print "INVALID: " + parsed_array[3..parsed_array.length].join("\n")
+    return true
+  end
+
+  def present_missing(parsed_array)
+    prompt_print "MISSING: " + parsed_array[3..parsed_array.length].join("\n")
+    return true
+  end
+
+  def present_empty(parsed_array)
+    if parsed_array.length > 3
+      prompt_print parsed_array[3..parsed_array.length].join("\n")
+    end
+    return false
+  end
+
+  def present(parsed_array)
+    return if parsed_array.length < 3
+    if parsed_array[2] == 'error'
+      return present_error parsed_array
+    elsif parsed_array[2] == 'invalid'
+      return present_invalid parsed_array
+    elsif parsed_array[2] == 'missing'
+      return present_missing parsed_array
+    elsif parsed_array[2] == ''
+      return present_empty parsed_array
+    else
+      prompt_print parsed_array[3..parsed_array.length-1].join("\n")
+    end
+    return false
+  end
 end
 
 class HelpHandler < Handler
@@ -159,7 +283,6 @@ class HelpHandler < Handler
     end
   end
 end
-
 $handler['help'] = HelpHandler.new
 
 class ExitHandler < Handler
@@ -186,10 +309,65 @@ class ExitHandler < Handler
     end
   end
 end
-
 $handler['exit'] = ExitHandler.new
 
-while line = Readline.readline("> ", true)
+class ListHandler < Handler
+  def initialize
+    super("list", "Prints out the list of labels.")
+  end
+
+  def handle(parts)
+    if parts.length != 1
+      usage
+      return
+    end
+    id = $identifier.get
+    incoming id
+    relay "[#{id},\"list\"]"
+  end
+end
+$handler['list'] = ListHandler.new
+
+class SetHandler < Handler
+  def initialize
+    super("set label value", "Sets label to JSON-encoded value, in 'quotes' as needed.")
+  end
+
+  def handle(parts)
+    if parts.length < 3
+      usage
+      return
+    end
+    v = parts[2..parts.length].join("")
+    relay "{\"#{parts[1]}\":#{v}}"
+  end
+end
+$handler['set'] = SetHandler.new
+
+class GetHandler < Handler
+  def initialize
+    super("get label...", "Gets labels.")
+  end
+
+  def handle(parts)
+    if parts.length < 2
+      usage
+      return
+    end
+    id = $identifier.get
+    incoming id
+    names = parts[1..parts.length].join('","')
+    relay "[#{id},\"get\",\"#{names}\"]"
+  end
+
+  def present_empty(parsed_array)
+    prompt_print parsed_array[3].to_json
+    return false
+  end
+end
+$handler['get'] = GetHandler.new
+
+while line = Readline.readline($prompt, true)
   parts = line.shellsplit
   next if parts.length == 0
   if $handler.has_key? parts[0]
@@ -199,16 +377,12 @@ while line = Readline.readline("> ", true)
   end
   break if $exiting
 
-  # Parse line into shell commands.
-  # Trim input and split, but should respect quotes and escaping.
-  # Allow separation of commands using semicolon?
-
   # datalackey direct commands:
-  # {} (set label=value ...)
-  # Get (cat label ...)
+  ## {} (set label value)
+  # Get (get label ...)
   # Rename (mv label new)
   # Delete (rm label)
-  # List (ls [pattern])
+  ## List (list [pattern])
   # Run (run) See below for all parts.
   # Processes (ps)
   # Terminate (kill identifier)
@@ -240,10 +414,11 @@ while line = Readline.readline("> ", true)
   #  current for parts that have not been recalled.
   #  recall allows for editing values, re-run direct re-use
   # history [pattern] Shows history matching the pattern.
+  
 end
 
 $lackey.finish
 $lackey.wait_output
-# Print out the remaining output here.
+$presenter.wait_output
 puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
 exit $handler['exit'].code
