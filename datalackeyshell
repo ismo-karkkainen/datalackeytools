@@ -151,33 +151,46 @@ end
 
 $lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
 
+$prompt = '> '
+def prompt_print(message)
+  puts
+  puts message
+  print $prompt
+  STDOUT.flush
+  Readline.redisplay
+end
+
 class OutputPresenter
   def initialize
-    @handlers = Hash.new
+    @handlers = Hash.new(nil)
     @present_output = Thread.new do
       last_stderr = false
+      had_output = false
       until $lackey.stdout.closed? and $lackey.stderr.closed?
+        had_output = false
         while out = $lackey.get_output
           break if out.nil?
           arr = JSON.parse(out)
-          break unless @handlers.has_key? arr[0]
-          keep = @handlers[arr[0]].present(arr)
-          Readline.redisplay
+          handler = @handlers[arr[1]]
+          break if handler.nil?
+          handler.present(arr, out)
           last_stderr = false
+          had_output = true
         end
         while out = $lackey.get_lackey_error
           break if out.nil?
-          puts "STDERR:" unless last_stderr
+          head = last_stderr ? '' : 'STDERR:'
+          prompt_print head + out
           last_stderr = true
-          puts out
+          had_output = true
         end
-        sleep 0.1
+        sleep(0.1) unless had_output
       end
     end
   end
 
-  def incoming(identifier, handler)
-    @handlers[identifier] = handler
+  def handle(command, handler)
+    @handlers[command] = handler
   end
 
   def wait_output
@@ -185,7 +198,6 @@ class OutputPresenter
   end
 end
 $presenter = OutputPresenter.new
-
 
 class IdentifierGenerator
   def initialize
@@ -200,25 +212,19 @@ end
 $identifier = IdentifierGenerator.new
 
 # Declare command handler classes here as well as the mapping.
-$handler = Hash.new
+$handler = Hash.new(nil)
 $exiting = false
 
-$prompt = '> '
-def prompt_print(message)
-  puts
-  puts message
-  print $prompt
-  STDOUT.flush
-end
-
 class Handler
-  def initialize(usage_text, help_text)
-    @help_text = help_text
+  def initialize(usage_text, help_text, extended_help_text=nil)
     @usage_text = usage_text
+    @help_text = help_text
+    @extended_help_text = extended_help_text
   end
 
   def help
     puts "#{@usage_text} : #{@help_text}"
+    puts(@extended_help_text) unless @extended_help_text.nil?
   end
 
   def usage
@@ -226,49 +232,40 @@ class Handler
   end
 
   def incoming(identifier)
-    $presenter.incoming(identifier, self)
+    $presenter.handle(identifier, self)
   end
 
   def relay(message)
     $lackey.relay(message)
   end
 
-  def present_error(parsed_array)
-    prompt_print "ERROR: " + parsed_array[3..parsed_array.length].join(" ")
-    return false
+  def present_error(parsed, json)
+    prompt_print "ERROR: " + parsed[3...parsed.length].join(" ")
   end
 
-  def present_invalid(parsed_array)
-    prompt_print "INVALID: " + parsed_array[3..parsed_array.length].join("\n")
-    return true
+  def present_invalid(parsed, json)
+    prompt_print "INVALID: " + parsed[3...parsed.length].join("\n")
   end
 
-  def present_missing(parsed_array)
-    prompt_print "MISSING: " + parsed_array[3..parsed_array.length].join("\n")
-    return true
+  def present_missing(parsed, json)
+    prompt_print "MISSING: " + parsed[3...parsed.length].join("\n")
   end
 
-  def present_empty(parsed_array)
-    if parsed_array.length > 3
-      prompt_print parsed_array[3..parsed_array.length].join("\n")
-    end
-    return false
+  def present_other(parsed, json)
+    prompt_print(parsed[3...parsed.length].join("\n")) if parsed.length > 3
   end
 
-  def present(parsed_array)
-    return if parsed_array.length < 3
-    if parsed_array[2] == 'error'
-      return present_error parsed_array
-    elsif parsed_array[2] == 'invalid'
-      return present_invalid parsed_array
-    elsif parsed_array[2] == 'missing'
-      return present_missing parsed_array
-    elsif parsed_array[2] == ''
-      return present_empty parsed_array
+  def present(parsed, json)
+    return if parsed.length < 3
+    if parsed[2] == 'error'
+      present_error(parsed, json)
+    elsif parsed[2] == 'invalid'
+      present_invalid(parsed, json)
+    elsif parsed[2] == 'missing'
+      present_missing(parsed, json)
     else
-      prompt_print parsed_array[3..parsed_array.length-1].join("\n")
+      present_other(parsed, json)
     end
-    return false
   end
 end
 
@@ -314,6 +311,7 @@ $handler['exit'] = ExitHandler.new
 class ListHandler < Handler
   def initialize
     super("list", "Prints out the list of labels.")
+    incoming 'list'
   end
 
   def handle(parts)
@@ -322,7 +320,6 @@ class ListHandler < Handler
       return
     end
     id = $identifier.get
-    incoming id
     relay "[#{id},\"list\"]"
   end
 end
@@ -330,7 +327,7 @@ $handler['list'] = ListHandler.new
 
 class SetHandler < Handler
   def initialize
-    super("set label value", "Sets label to JSON-encoded value, in 'quotes' as needed.")
+    super("set label value", "Sets label to JSON-encoded value", "  Enclose value in single quotes as needed, escaping any single quotes within.")
   end
 
   def handle(parts)
@@ -338,7 +335,7 @@ class SetHandler < Handler
       usage
       return
     end
-    v = parts[2..parts.length].join("")
+    v = parts[2...parts.length].join("")
     relay "{\"#{parts[1]}\":#{v}}"
   end
 end
@@ -347,6 +344,7 @@ $handler['set'] = SetHandler.new
 class GetHandler < Handler
   def initialize
     super("get label...", "Gets labels.")
+    incoming 'get'
   end
 
   def handle(parts)
@@ -355,32 +353,56 @@ class GetHandler < Handler
       return
     end
     id = $identifier.get
-    incoming id
-    names = parts[1..parts.length].join('","')
+    names = parts[1...parts.length].join('","')
     relay "[#{id},\"get\",\"#{names}\"]"
   end
 
-  def present_empty(parsed_array)
-    prompt_print parsed_array[3].to_json
-    return false
+  def present_other(parsed, json)
+    return if parsed[2] != ''
+    head = "[#{parsed[0]},\"#{parsed[1]}\",\"\","
+    prompt_print json[head.length..json.length - 1]
   end
 end
 $handler['get'] = GetHandler.new
 
+class RenameHandler < Handler
+  def initialize
+    super("mv label new-label ...", "Re-labels values. Takes label pairs.")
+    incoming 'rename'
+  end
+
+  def handle(parts)
+    if (parts.length - 1) % 2 != 0
+      usage
+      return
+    end
+    id = $identifier.get
+    names = parts[1...parts.length].join('","')
+    relay "[#{id},\"rename\",\"#{names}\"]"
+  end
+
+  def present_other(parsed, json)
+    return if parsed[2] != 'renamed' and parsed.length != 5
+    prompt_print "#{parsed[3]} -> #{parsed[4]}"
+  end
+end
+$handler['mv'] = RenameHandler.new
+
 while line = Readline.readline($prompt, true)
   parts = line.shellsplit
   next if parts.length == 0
-  if $handler.has_key? parts[0]
-    $handler[parts[0]].handle(parts)
-  else
+  h = $handler[parts[0]]
+  if h.nil?
     puts "Unknown command: #{parts[0]}"
+  else
+    h.handle(parts)
   end
   break if $exiting
 
   # datalackey direct commands:
   ## {} (set label value)
-  # Get (get label ...)
-  # Rename (mv label new)
+  ## Get (get label ...)
+  ## Rename (mv label new)
   # Delete (rm label)
   ## List (list [pattern])
   # Run (run) See below for all parts.
