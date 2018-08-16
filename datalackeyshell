@@ -6,6 +6,8 @@ require 'shellwords'
 require 'open3'
 require 'json'
 
+$version = 1
+
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions
 
@@ -78,8 +80,10 @@ exit(1) if exe == nil
 
 class LackeyProcess
   attr_reader :exit_code, :stdout, :stderr
+  attr_accessor :echo
 
   def initialize(exe, directory, permissions, memory)
+    @echo = false
     @accum_stdout = []
     @ready_stdout = Queue.new
     @unwanted_stderr = Queue.new
@@ -125,6 +129,7 @@ class LackeyProcess
 
   def relay(message)
     @stdin.write message
+    puts(message) if @echo
   end
 
   def finish
@@ -152,12 +157,16 @@ end
 $lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
 
 $prompt = '> '
-def prompt_print(message)
-  puts
-  puts message
+def reprompt
   print $prompt
   STDOUT.flush
   Readline.redisplay
+end
+
+def prompt_print(message)
+  puts
+  puts message
+  reprompt
 end
 
 class OutputPresenter
@@ -211,7 +220,6 @@ class IdentifierGenerator
 end
 $identifier = IdentifierGenerator.new
 
-# Declare command handler classes here as well as the mapping.
 $handler = Hash.new(nil)
 $exiting = false
 
@@ -252,7 +260,8 @@ class Handler
   end
 
   def present_other(parsed, json)
-    prompt_print(parsed[3...parsed.length].join("\n")) if parsed.length > 3
+    start = parsed[2] == '' ? 3 : 2
+    prompt_print(parsed[start...parsed.length].join("\n")) if parsed.length > 3
   end
 
   def present(parsed, json)
@@ -291,13 +300,9 @@ class ExitHandler < Handler
   end
 
   def handle(parts)
+    return usage() if parts.length > 2
     $exiting = true
     return if parts.length == 1
-    if parts.length != 2
-      usage
-      $exiting = false
-      return
-    end
     begin
       @code = Integer(parts[1])
     rescue ArgumentError
@@ -315,10 +320,7 @@ class ListHandler < Handler
   end
 
   def handle(parts)
-    if parts.length != 1
-      usage
-      return
-    end
+    return usage() if parts.length != 1
     id = $identifier.get
     relay "[#{id},\"list\"]"
   end
@@ -331,10 +333,7 @@ class SetHandler < Handler
   end
 
   def handle(parts)
-    if parts.length < 3
-      usage
-      return
-    end
+    return usage() if parts.length < 3
     v = parts[2...parts.length].join("")
     relay "{\"#{parts[1]}\":#{v}}"
   end
@@ -348,10 +347,7 @@ class GetHandler < Handler
   end
 
   def handle(parts)
-    if parts.length < 2
-      usage
-      return
-    end
+    return usage() if parts.length < 2
     id = $identifier.get
     names = parts[1...parts.length].join('","')
     relay "[#{id},\"get\",\"#{names}\"]"
@@ -360,7 +356,7 @@ class GetHandler < Handler
   def present_other(parsed, json)
     return if parsed[2] != ''
     head = "[#{parsed[0]},\"#{parsed[1]}\",\"\","
-    prompt_print json[head.length..json.length - 1]
+    prompt_print json[head.length...json.length - 1]
   end
 end
 $handler['get'] = GetHandler.new
@@ -372,10 +368,7 @@ class RenameHandler < Handler
   end
 
   def handle(parts)
-    if (parts.length - 1) % 2 != 0
-      usage
-      return
-    end
+    return usage() if (parts.length - 1) % 2 != 0
     id = $identifier.get
     names = parts[1...parts.length].join('","')
     relay "[#{id},\"rename\",\"#{names}\"]"
@@ -387,6 +380,126 @@ class RenameHandler < Handler
   end
 end
 $handler['mv'] = RenameHandler.new
+
+class DeleteHandler < Handler
+  def initialize
+    super("rm label ...", "Removes labels from storage.")
+  end
+
+  def handle(parts)
+    return usage() if parts.length == 1
+    id = $identifier.get
+    names = parts[1...parts.length].join('","')
+    relay "[#{id},\"delete\",\"#{names}\"]"
+  end
+end
+$handler['rm'] = DeleteHandler.new
+
+class StorageInfoHandler < Handler
+  def initialize
+    super("info", "Print information about storage.")
+    incoming 'storage-info'
+  end
+
+  def handle(parts)
+    return usage() if parts.length != 1
+    id = $identifier.get
+    relay "[#{id},\"storage-info\"]"
+  end
+
+  def present_other(parsed, json)
+    return if parsed[2] != '' or parsed.length != 4
+    puts
+    parsed[3].keys.sort.each do |label|
+      info = parsed[3][label]
+      description = "#{label} : "
+      sep = ''
+      info.keys.sort.each do |format|
+        description.concat "#{sep}#{format}: #{info[format]}"
+        sep = ', '
+      end
+      puts description
+    end
+    reprompt
+  end
+end
+$handler['info'] = StorageInfoHandler.new
+
+class PingHandler < Handler
+  def initialize
+    super("ping", "Check that datalackey responds.")
+    incoming 'no-op'
+  end
+
+  def handle(parts)
+    return usage() if parts.length != 1
+    id = $identifier.get
+    relay "[#{id},\"no-op\"]"
+  end
+
+  def present_other(parsed, json)
+    prompt_print "Datalackey responded."
+  end
+end
+$handler['ping'] = PingHandler.new
+
+class VersionHandler < Handler
+  def initialize
+    super("version", "Print version information.")
+    incoming 'version'
+  end
+
+  def handle(parts)
+    return usage() if parts.length != 1
+    id = $identifier.get
+    relay "[#{id},\"version\"]"
+  end
+
+  def present_other(parsed, json)
+    return if parsed[2] != '' or parsed.length != 4
+    description = "shell: #{$version}"
+    parsed[3].keys.sort.each do |key|
+      description.concat "\n#{key}: #{parsed[3][key]}"
+    end
+    prompt_print description
+  end
+end
+$handler['version'] = VersionHandler.new
+
+class EchoHandler < Handler
+  def initialize
+    super("echo on|off", "Set printing of commands sent to datalackey on or off.")
+  end
+
+  def handle(parts)
+    return usage() if parts.length != 2 or not ['on', 'off'].include? parts[1]
+    $lackey.echo = parts[1] == 'on'
+  end
+end
+$handler['echo'] = EchoHandler.new
+
+class HistoryHandler < Handler
+  def initialize
+    super("history [regex ...]", "Print commands that match any regex, or all.")
+  end
+
+  def handle(parts)
+    exps = Array.new
+    parts[1...parts.length].each do |e|
+      exps.push Regexp.new(e)
+    end
+    Readline::HISTORY.take(Readline::HISTORY.length - 1).each do |h|
+      match = exps.length == 0
+      exps.each do |e|
+        match = e.match(h)
+        break if match
+      end
+      puts(h) if match
+    end
+  end
+end
+$handler['history'] = HistoryHandler.new
+
 
 while line = Readline.readline($prompt, true)
   parts = line.shellsplit
@@ -400,21 +513,12 @@ while line = Readline.readline($prompt, true)
   break if $exiting
 
   # datalackey direct commands:
-  ## {} (set label value)
-  ## Get (get label ...)
-  ## Rename (mv label new)
-  # Delete (rm label)
-  ## List (list [pattern])
   # Run (run) See below for all parts.
   # Processes (ps)
   # Terminate (kill identifier)
   # Feed (feed identifier [name=]label|direct name=value ...)
   # EndFeed (eof identifier)
-  # StorageInfo (du) ?
-  # Version (version) Prints this and datalackey versions.
-  # NoOperation (ping) ?
-  # Other commands for convenience with above:
-  # echo on|off|last Print the command sent to datalackey always|never|last.
+
   # Run helper commands.
   # input name=label|direct name=value ... Construct/clear input mapping.
   # input+ name=label|direct name=value ... Append to input mapping.
@@ -435,8 +539,6 @@ while line = Readline.readline($prompt, true)
   # re-run program ... Like "recall program ..." and "run program" so uses
   #  current for parts that have not been recalled.
   #  recall allows for editing values, re-run direct re-use
-  # history [pattern] Shows history matching the pattern.
-  
 end
 
 $lackey.finish
