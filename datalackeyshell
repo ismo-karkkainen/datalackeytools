@@ -1,12 +1,21 @@
 #!/usr/bin/ruby
 
+# Argument handling and checking
+# datalackey process
+# Presenting command output
+# Command handlers
+# Run command handlers
+
 require 'optparse'
 require 'readline'
 require 'shellwords'
 require 'open3'
 require 'json'
+require 'set'
 
 $version = 1
+
+# Argument handling and checking
 
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions
@@ -77,6 +86,8 @@ else
   end
 end
 exit(1) if exe == nil
+
+# datalackey process
 
 class LackeyProcess
   attr_reader :exit_code, :stdout, :stderr
@@ -156,6 +167,8 @@ end
 
 $lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
 
+# Presenting command output
+
 $prompt = '> '
 def reprompt
   print $prompt
@@ -223,6 +236,8 @@ $identifier = IdentifierGenerator.new
 $handler = Hash.new(nil)
 $exiting = false
 
+# Command handlers
+
 class Handler
   def initialize(usage_text, help_text, extended_help_text=nil)
     @usage_text = usage_text
@@ -284,8 +299,12 @@ class HelpHandler < Handler
   end
 
   def handle(parts)
+    printed = Set.new
     $handler.keys.sort.each do |key|
+      object = $handler[key]
+      next if printed.include? object
       $handler[key].help
+      printed.add object
     end
   end
 end
@@ -500,6 +519,227 @@ class HistoryHandler < Handler
 end
 $handler['history'] = HistoryHandler.new
 
+# Run command handlers
+
+class InputHandler < Handler
+  def initialize
+    extra = "  Passes label as name, or value of name as given directly.\n"\
+      "  Allowed values are integers and strings. Quote '\"string value\"'.\n"\
+      "  input+ appends to current mapping, input clears it first."
+    super("input[+] [name : label | name = value ...]", "Map input name to label/value.", extra)
+    @order = Array.new
+    @mapping = Hash.new
+  end
+
+  def handle(parts)
+    return usage() if (parts.length % 3) != 1
+    if parts[0] == 'input'
+      @order.clear
+      @mapping.clear
+    end
+    idx = 1
+    while idx < parts.length
+      name = parts[idx]
+      return usage() unless [':', '='].include? parts[idx + 1]
+      direct = parts[idx + 1] == '='
+      src = parts[idx + 2]
+      idx += 3
+      if @mapping.has_key? name
+        puts "Error: #{name} already in mapping."
+        break
+      end
+      if direct
+        begin
+          check = JSON.load(src)
+        rescue JSON::ParserError
+          puts "Error: #{name} value is invalid: #{src}"
+          break
+        end
+      end
+      @order.push name
+      @mapping[name] = [direct, src]
+    end
+    @order.each do |name|
+      direct, val = @mapping[name]
+      t = direct ? "=" : ": "
+      puts "#{name} #{t} #{val}"
+    end
+  end
+
+  def command_part
+    command = ''
+    sep = ''
+    @order.each do |name|
+      direct, val = @mapping[name]
+      if direct
+        command.concat "#{sep}\"direct\",\"#{name}\",#{val}"
+      else
+        command.concat "#{sep}\"input\",\"#{name}\",\"#{val}\""
+      end
+      sep = ','
+    end
+    return command
+  end
+end
+$handler['input'] = InputHandler.new
+$handler['input+'] = $handler['input']
+
+class OutputHandler < Handler
+  def initialize
+    cmds = "output[+] [label name ...]\n"\
+      "output-naming prefix postfix"
+    extra = "  Maps name to label. Using null as label discards that name.\n"\
+      "  output+ adds to current mapping, output clears it first.\n"\
+      "  output-naming sets prefix and postfix to names that have no match."
+    super(cmds, "Map output name to label.", extra)
+    @mapping = Hash.new
+    @prefix = nil
+    @postfix = nil
+  end
+
+  def handle(parts)
+    return usage() if (parts.length % 2) != 1
+    if parts[0] == 'output'
+      @mapping.clear
+      @prefix = nil
+      @postfix = nil
+    end
+    if parts[0] == 'output-naming'
+      return usage() if parts.length != 3
+      @prefix = parts[1].length ? parts[1] : nil
+      @postfix = parts[2].length ? parts[2] : nil
+    else
+      idx = 1
+      while idx < parts.length
+        name = parts[idx]
+        src = parts[idx + 1]
+        idx += 2
+        if @mapping.has_key? name
+          old = @mapping[name]
+          puts "Overwrote #{name} old value #{old} with #{src}"
+        end
+        @mapping[name] = src
+      end
+    end
+    puts("Prefix: #{@prefix}") unless @prefix.nil?
+    puts("Postfix: #{@postfix}") unless @postfix.nil?
+    @mapping.keys.sort.each do |name|
+      label = @mapping[name]
+      puts "\"#{name}\" \"#{label}\""
+    end
+  end
+
+  def command_part
+    command = ''
+    sep = ''
+    if not @prefix.nil?
+      command = "\"output-prefix\",\"#{@prefix}\""
+      sep = ','
+    end
+    if not @postfix.nil?
+      command = "#{sep}\"output-postfix\",\"#{@postfix}\""
+      sep = ','
+    end
+    @mapping.keys.sort.each do |name|
+      val = @mapping[name]
+      val = "\"#{val}\"" unless val == 'null'
+      command.concat "#{sep}\"output\",\"#{name}\",#{val}"
+      sep = ','
+    end
+    return command
+  end
+end
+$handler['output'] = OutputHandler.new
+$handler['output+'] = $handler['output']
+$handler['output-naming'] = $handler['output']
+
+class EnvHandler < Handler
+  def initialize
+    extra = "  Sets var to value.\n"\
+      "  env+ appends to current set, env clears it first.\n"\
+      "  env-clear ignores other than currently set environment."
+    super("env[+] [var value ...]\nenv-clear", "Set environment variable to value.", extra)
+    @mapping = Hash.new
+    @clear = false
+  end
+
+  def handle(parts)
+    return usage() if (parts.length % 2) != 1
+    if parts[0] == 'env'
+      @mapping.clear
+      @clear = false
+    end
+    if parts[0] == 'env-clear'
+      return usage() if parts.length != 1
+      @clear = true
+    else
+      idx = 1
+      while idx < parts.length
+        name = parts[idx]
+        value = parts[idx + 1]
+        idx += 2
+        if @mapping.has_key? name
+          old = @mapping[name]
+          puts "Overwrote #{name} value #{old} with #{value}"
+        end
+        @mapping[name] = value
+      end
+    end
+    puts "Restrict environment to given values."  if @clear == true
+    @mapping.keys.sort.each do |name|
+      value = @mapping[name]
+      puts "\"#{name}\" \"#{value}\""
+    end
+  end
+
+  def command_part
+    command = ''
+    sep = ''
+    if @clear
+      command = "\"env-clear\""
+      sep = ','
+    end
+    @mapping.keys.sort.each do |name|
+      val = @mapping[name]
+      command.concat "#{sep}\"env\",\"#{name}\",\"#{val}\""
+      sep = ','
+    end
+    return command
+  end
+end
+$handler['env'] = EnvHandler.new
+$handler['env+'] = $handler['env']
+$handler['env-clear'] = $handler['env']
+
+class ArgsHandler < Handler
+  def initialize
+    extra = "  args+ appends to current list, args clears it first."
+    super("args[+] [value ...]", "Add program arguments.", extra)
+    @args = Array.new
+  end
+
+  def handle(parts)
+    if parts[0] == 'args'
+      @args.clear
+    end
+    @args.concat parts[1...parts.length]
+    @args.each do |arg|
+      puts "\"#{arg}\""
+    end
+  end
+
+  def command_part
+    command = ''
+    sep = ''
+    @args.each do |arg|
+      command.concat "#{sep}\"#{arg}\""
+      sep = ','
+    end
+    return command
+  end
+end
+$handler['args'] = ArgsHandler.new
+$handler['args+'] = $handler['args']
 
 while line = Readline.readline($prompt, true)
   parts = line.shellsplit
@@ -516,20 +756,12 @@ while line = Readline.readline($prompt, true)
   # Run (run) See below for all parts.
   # Processes (ps)
   # Terminate (kill identifier)
-  # Feed (feed identifier [name=]label|direct name=value ...)
+  # Feed (feed identifier name : label | name = value ...)
   # EndFeed (eof identifier)
 
   # Run helper commands.
-  # input name=label|direct name=value ... Construct/clear input mapping.
-  # input+ name=label|direct name=value ... Append to input mapping.
-  # output label=name ... Construct/clear output mapping.
-  # output+ label=name ... Append to output mapping.
-  # format in|out json When there is an alternative.
-  # channel in|out pipe|shared_memory When there is an alternative.
-  # env var=value ... Contruct/clear environment.
-  # env+ var=value ... Append to environment.
-  # args arguments as they are... Construct/clear program argument list.
-  # args+ arguments as they are... Append to program argument list.
+  # format in|out|err json When there is an alternative.
+  # channel in|out|err pipe|shared_memory When there is an alternative.
   # run program [eof] Run using input, output, format, channel, env, args.
   #  Optional eof indicates to close feed in the same call.
   # print input, output, format, channel, env, args Print argument state or
