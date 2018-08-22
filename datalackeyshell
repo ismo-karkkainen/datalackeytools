@@ -143,6 +143,10 @@ class LackeyProcess
     puts(message) if @echo
   end
 
+  def reset
+    @stdin.putc 0
+  end
+
   def finish
     @stdin.close
     @wait_thread.join
@@ -233,10 +237,24 @@ class IdentifierGenerator
 end
 $identifier = IdentifierGenerator.new
 
-$handler = Hash.new(nil)
-$exiting = false
+# Notification presenters
+
+class PresentError
+  def initialize
+    $presenter.handle('error', self)
+  end
+
+  def present(parsed, json)
+    prompt_print "Datalackey input format error, resetting stream."
+    $lackey.reset
+  end
+end
+$error_presenter = PresentError.new
 
 # Command handlers
+
+$handler = Hash.new(nil)
+$exiting = false
 
 class Handler
   def initialize(usage_text, help_text, extended_help_text=nil)
@@ -245,9 +263,9 @@ class Handler
     @extended_help_text = extended_help_text
   end
 
-  def help
+  def help(short)
     puts "#{@usage_text} : #{@help_text}"
-    puts(@extended_help_text) unless @extended_help_text.nil?
+    puts(@extended_help_text) unless @extended_help_text.nil? or short == true
   end
 
   def usage
@@ -295,20 +313,35 @@ end
 
 class HelpHandler < Handler
   def initialize
-    super('help', "Print command help.")
+    super('help|usage [command ...]', "Print command help or short usage.")
   end
 
   def handle(parts)
+    short = parts[0] == 'usage'
     printed = Set.new
-    $handler.keys.sort.each do |key|
-      object = $handler[key]
-      next if printed.include? object
-      $handler[key].help
-      printed.add object
+    if parts.length == 1
+      $handler.keys.sort.each do |key|
+        object = $handler[key]
+        next if printed.include? object
+        $handler[key].help(short)
+        printed.add object
+      end
+    else
+      parts[1...parts.length].sort.each do |key|
+        if $handler.include? key
+          object = $handler[key]
+          next if printed.include? object
+          $handler[key].help(short)
+          printed.add object
+        else
+          puts "Unknown command: #{key}"
+        end
+      end
     end
   end
 end
 $handler['help'] = HelpHandler.new
+$handler['usage'] = $handler['help']
 
 class ExitHandler < Handler
   attr_reader :code
@@ -334,7 +367,7 @@ $handler['exit'] = ExitHandler.new
 
 class ListHandler < Handler
   def initialize
-    super("list", "Prints out the list of labels.")
+    super("ls", "Prints out the list of labels.")
     incoming 'list'
   end
 
@@ -344,7 +377,7 @@ class ListHandler < Handler
     relay "[#{id},\"list\"]"
   end
 end
-$handler['list'] = ListHandler.new
+$handler['ls'] = ListHandler.new
 
 class SetHandler < Handler
   def initialize
@@ -487,7 +520,7 @@ $handler['version'] = VersionHandler.new
 
 class EchoHandler < Handler
   def initialize
-    super("echo on|off", "Set printing of commands sent to datalackey on or off.")
+    super("echo on|off", "Set printing of datalackey commands on or off.")
   end
 
   def handle(parts)
@@ -496,6 +529,32 @@ class EchoHandler < Handler
   end
 end
 $handler['echo'] = EchoHandler.new
+
+class NotifyHandler < Handler
+  def initialize
+    super("notify process|data on|off", "Turn process or data notifications on or off.")
+    incoming 'process'
+    incoming 'data'
+    @notify = { 'process' => 'off', 'data' => 'on' }
+  end
+
+  def handle(parts)
+    if parts.length != 1
+      return usage() unless parts.length == 3
+      return usage() unless ['process', 'data'].include? parts[1]
+      return usage() unless ['on', 'off'].include? parts[2]
+      @notify[parts[1]] = parts[2]
+    end
+    @notify.keys.sort.each do |key|
+      puts "#{key} : #{@notify[key]}"
+    end
+  end
+
+  def present(parsed, json)
+    prompt_print "#{parsed[1].capitalize} #{parsed[2]} : #{parsed[3]}"
+  end
+end
+$handler['notify'] = NotifyHandler.new
 
 class HistoryHandler < Handler
   def initialize
@@ -561,22 +620,20 @@ class InputHandler < Handler
     end
     @order.each do |name|
       direct, val = @mapping[name]
-      t = direct ? "=" : ": "
+      t = direct ? "=" : ":"
       puts "#{name} #{t} #{val}"
     end
   end
 
   def command_part
     command = ''
-    sep = ''
     @order.each do |name|
       direct, val = @mapping[name]
       if direct
-        command.concat "#{sep}\"direct\",\"#{name}\",#{val}"
+        command.concat ",\"direct\",#{val},\"#{name}\""
       else
-        command.concat "#{sep}\"input\",\"#{name}\",\"#{val}\""
+        command.concat ",\"input\",\"#{val}\",\"#{name}\""
       end
-      sep = ','
     end
     return command
   end
@@ -631,20 +688,16 @@ class OutputHandler < Handler
 
   def command_part
     command = ''
-    sep = ''
     if not @prefix.nil?
-      command = "\"output-prefix\",\"#{@prefix}\""
-      sep = ','
+      command = ",\"output-prefix\",\"#{@prefix}\""
     end
     if not @postfix.nil?
-      command = "#{sep}\"output-postfix\",\"#{@postfix}\""
-      sep = ','
+      command = ",\"output-postfix\",\"#{@postfix}\""
     end
     @mapping.keys.sort.each do |name|
       val = @mapping[name]
       val = "\"#{val}\"" unless val == 'null'
-      command.concat "#{sep}\"output\",\"#{name}\",#{val}"
-      sep = ','
+      command.concat ",\"output\",\"#{name}\",#{val}"
     end
     return command
   end
@@ -693,16 +746,10 @@ class EnvHandler < Handler
   end
 
   def command_part
-    command = ''
-    sep = ''
-    if @clear
-      command = "\"env-clear\""
-      sep = ','
-    end
+    command = @clear ? ",\"env-clear\"" : ''
     @mapping.keys.sort.each do |name|
       val = @mapping[name]
-      command.concat "#{sep}\"env\",\"#{name}\",\"#{val}\""
-      sep = ','
+      command.concat ",\"env\",\"#{name}\",\"#{val}\""
     end
     return command
   end
@@ -730,16 +777,170 @@ class ArgsHandler < Handler
 
   def command_part
     command = ''
-    sep = ''
     @args.each do |arg|
-      command.concat "#{sep}\"#{arg}\""
-      sep = ','
+      command.concat ",\"#{arg}\""
     end
     return command
   end
 end
 $handler['args'] = ArgsHandler.new
 $handler['args+'] = $handler['args']
+
+class ChannelHandler < Handler
+  def initialize
+    extra = "  First parameter selects stdin, stdout or stderr.\n"\
+      "  Second parameter indicates format as JSON (data input/output), bytes,\n"\
+      "  output to user but not processed in any manner or closed if none.\n"\
+      "  channel? prints out the current setting."
+    super("channel in|out|err json|bytes|none\nchannel?", "Set up channel for program run.", extra)
+    @channels = { 'in' => 'json', 'out' => 'json', 'err' => 'bytes' }
+  end
+
+  def handle(parts)
+    if parts[0] == 'channel?'
+      return usage() unless parts.length == 1
+    else
+      return usage() unless parts.length == 3
+      return usage() unless ['in', 'out', 'err'].include? parts[1]
+      return usage() unless ['json', 'bytes', 'none'].include? parts[2]
+      @channels[parts[1]] = parts[2]
+    end
+    @channels.keys.sort.each do |c|
+      puts "#{c} #{@channels[c]}"
+    end
+  end
+
+  def command_part
+    command = ''
+    @channels.keys.sort.each do |c|
+      next if @channels[c] == 'none'
+      direction = (c == 'in') ? 'in' : 'out'
+      fmt = (@channels[c] == 'json') ? 'JSON' : @channels[c]
+      command.concat ",\"channel\",\"#{direction}\",\"#{fmt}\",\"std#{c}\""
+    end
+    return command
+  end
+end
+$handler['channel'] = ChannelHandler.new
+$handler['channel?'] = $handler['channel']
+
+class RunHandler < Handler
+  def initialize
+    extra = "  Runs program using identifier closing the input if eof is given.\n"\
+      "  Uses current input, output, channel, env, and args setting."
+    super("run identifier program [eof]", "Runs a program.", extra)
+    incoming 'run'
+  end
+
+  def handle(parts)
+    return usage() if parts.length < 3 or 4 < parts.length
+    return usage() if parts.length == 4 and parts[3] != 'eof'
+    id = parts[1]
+    exe = parts[2]
+    eof = parts.length == 4
+    command = "[\"#{id}\",\"run\""
+    c = $handler['input'].command_part
+    command.concat(c) unless c.empty?
+    c = $handler['output'].command_part
+    command.concat(c) unless c.empty?
+    c = $handler['channel'].command_part
+    command.concat(c) unless c.empty?
+    command.concat(',"end-feed"') if eof
+    c = $handler['env'].command_part
+    command.concat(c) unless c.empty?
+    command.concat ",\"program\",\"#{exe}\""
+    c = $handler['args'].command_part
+    command.concat(c) unless c.empty?
+    command.concat ']'
+    relay command
+  end
+
+  def present_other(parsed, json)
+    if parsed[2] == 'bytes'
+      # Turn into string using the number values and print.
+      msg = ''
+      parsed[3...parsed.length].each do |v|
+        msg.concat v.chr
+      end
+      prompt_print "#{parsed[0]} bytes output:\n#{msg}"
+    else
+      msg = parsed[3...parsed.length].join(' ')
+      prompt_print "#{parsed[0]} : #{msg}"
+    end
+  end
+end
+$handler['run'] = RunHandler.new
+
+class PsHandler < Handler
+  def initialize
+    super("ps", "List running proceses.")
+    incoming 'processes'
+  end
+
+  def handle(parts)
+    return usage() unless parts.length == 1
+    id = $identifier.get
+    $lackey.relay "[#{id},\"processes\"]"
+  end
+
+  def present_other(parsed, json)
+    return if parsed[2] != '' or parsed.length < 4
+    report = 'Identifier : pid'
+    parsed[3].keys.sort.each do |id|
+      report.concat "\n#{id} : #{parsed[3][id]}"
+    end
+    prompt_print report
+  end
+end
+$handler['ps'] = PsHandler.new
+
+class KillHandler < Handler
+  def initialize
+    super("kill identifier ...", "Terminates processes.")
+    incoming 'terminate'
+  end
+
+  def handle(parts)
+    return usage() unless parts.length > 1
+    id = $identifier.get
+    names = parts[1...parts.length].join('","')
+    relay "[#{id},\"terminate\",\"#{names}\"]"
+  end
+
+  def present_other(parsed, json)
+    return if parsed[2] != '' or parsed.length < 4
+    names = parsed[3...parsed.length].join(" ")
+    prompt_print "Killed: #{names}"
+  end
+end
+$handler['kill'] = KillHandler.new
+
+class EndFeedHandler < Handler
+  def initialize
+    super("close identifier ...", "Closes process input.")
+    incoming 'end-feed'
+  end
+
+  def handle(parts)
+    return usage() unless parts.length > 1
+    id = $identifier.get
+    names = parts[1...parts.length].join('","')
+    relay "[#{id},\"end-feed\",\"#{names}\"]"
+  end
+
+  def present_other(parsed, json)
+    if parsed[2] == ''
+      state = "Closed:"
+    elsif parsed[2] == 'not-open'
+      state = "Closed already:"
+    else
+      return
+    end
+    names = parsed[1...parsed.length].join(' ')
+    prompt_print "#{state} #{names}"
+  end
+end
+$handler['close'] = EndFeedHandler.new
 
 while line = Readline.readline($prompt, true)
   parts = line.shellsplit
@@ -753,20 +954,10 @@ while line = Readline.readline($prompt, true)
   break if $exiting
 
   # datalackey direct commands:
-  # Run (run) See below for all parts.
-  # Processes (ps)
-  # Terminate (kill identifier)
   # Feed (feed identifier name : label | name = value ...)
-  # EndFeed (eof identifier)
 
   # Run helper commands.
-  # format in|out|err json When there is an alternative.
-  # channel in|out|err pipe|shared_memory When there is an alternative.
-  # run program [eof] Run using input, output, format, channel, env, args.
-  #  Optional eof indicates to close feed in the same call.
-  # print input, output, format, channel, env, args Print argument state or
-  #  without arguments print them all.
-  # recall program input output format channel env args Fetches value from
+  # recall program input output channel env args Fetches value from
   #  last run of program, without argumets fetches all.
   # re-run program ... Like "recall program ..." and "run program" so uses
   #  current for parts that have not been recalled.
@@ -776,5 +967,6 @@ end
 $lackey.finish
 $lackey.wait_output
 $presenter.wait_output
+puts() unless $exiting
 puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
 exit $handler['exit'].code
