@@ -3,6 +3,7 @@
 # Argument handling and checking
 # datalackey process
 # Presenting command output
+# Notification presenters
 # Command handlers
 # Run command handlers
 
@@ -187,6 +188,8 @@ def prompt_print(message)
 end
 
 class OutputPresenter
+  attr_accessor :echo
+
   def initialize
     @handlers = Hash.new(nil)
     @present_output = Thread.new do
@@ -196,6 +199,7 @@ class OutputPresenter
         had_output = false
         while out = $lackey.get_output
           break if out.nil?
+          puts(out) if @echo
           arr = JSON.parse(out)
           handler = @handlers[arr[1]]
           break if handler.nil?
@@ -367,7 +371,7 @@ $handler['exit'] = ExitHandler.new
 
 class ListHandler < Handler
   def initialize
-    super("ls", "Prints out the list of labels.")
+    super("list|ls", "Prints out the list of labels.")
     incoming 'list'
   end
 
@@ -378,6 +382,7 @@ class ListHandler < Handler
   end
 end
 $handler['ls'] = ListHandler.new
+$handler['list'] = $handler['ls']
 
 class SetHandler < Handler
   def initialize
@@ -394,7 +399,7 @@ $handler['set'] = SetHandler.new
 
 class GetHandler < Handler
   def initialize
-    super("get label...", "Gets labels.")
+    super("get label ...", "Gets labels.")
     incoming 'get'
   end
 
@@ -520,12 +525,15 @@ $handler['version'] = VersionHandler.new
 
 class EchoHandler < Handler
   def initialize
-    super("echo on|off", "Set printing of datalackey commands on or off.")
+    super("echo in|out on|off", "Set printing datalackey input or output on or off.")
   end
 
   def handle(parts)
-    return usage() if parts.length != 2 or not ['on', 'off'].include? parts[1]
-    $lackey.echo = parts[1] == 'on'
+    return usage() unless parts.length == 3
+    return usage() unless ['in', 'out'].include? parts[1]
+    return usage() unless ['on', 'off'].include? parts[2]
+    $lackey.echo = parts[2] == 'on' if parts[1] == 'in'
+    $presenter.echo = parts[2] == 'on' if parts[1] == 'out'
   end
 end
 $handler['echo'] = EchoHandler.new
@@ -864,7 +872,7 @@ class RunHandler < Handler
       end
       prompt_print "#{parsed[0]} bytes output:\n#{msg}"
     else
-      msg = parsed[3...parsed.length].join(' ')
+      msg = parsed[2...parsed.length].join(' ')
       prompt_print "#{parsed[0]} : #{msg}"
     end
   end
@@ -915,6 +923,30 @@ class KillHandler < Handler
 end
 $handler['kill'] = KillHandler.new
 
+class FeedHandler < Handler
+  def initialize
+    super("feed identifier ...", "Pass current input set to processes.")
+    incoming 'feed'
+  end
+
+  def handle(parts)
+    return usage() unless parts.length > 1
+    c = $handler['input'].command_part
+    parts[1...parts.length].each do |procid|
+      id = $identifier.get
+      command = "[\"#{id}\",\"feed\",\"#{procid}\""
+      command.concat(c) unless c.empty?
+      command.concat ']'
+      relay command
+    end
+  end
+
+  def present_error(parsed, json)
+    prompt_print "Process identifier not found."
+  end
+end
+$handler['feed'] = FeedHandler.new
+
 class EndFeedHandler < Handler
   def initialize
     super("close identifier ...", "Closes process input.")
@@ -936,11 +968,23 @@ class EndFeedHandler < Handler
     else
       return
     end
-    names = parsed[1...parsed.length].join(' ')
+    names = parsed[3...parsed.length].join(' ')
     prompt_print "#{state} #{names}"
   end
 end
 $handler['close'] = EndFeedHandler.new
+
+class RawHandler < Handler
+  def initialize
+    super("raw json", "Pass unchecked JSON to datalackey.")
+  end
+
+  def handle(parts)
+    return usage() unless parts.length > 1
+    relay parts[1...parts.length].join('')
+  end
+end
+$handler['raw'] = RawHandler.new
 
 while line = Readline.readline($prompt, true)
   parts = line.shellsplit
@@ -952,9 +996,6 @@ while line = Readline.readline($prompt, true)
     h.handle(parts)
   end
   break if $exiting
-
-  # datalackey direct commands:
-  # Feed (feed identifier name : label | name = value ...)
 
   # Run helper commands.
   # recall program input output channel env args Fetches value from
