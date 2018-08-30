@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 # Argument handling and checking
 # datalackey process
@@ -13,8 +13,11 @@ require 'shellwords'
 require 'open3'
 require 'json'
 require 'set'
+require 'pathname'
 
 $version = 1
+history_file_basename = '.datalackeyshell.history'
+history_file_max_lines = 2000
 
 # Argument handling and checking
 
@@ -986,15 +989,31 @@ class RawHandler < Handler
 end
 $handler['raw'] = RawHandler.new
 
-while line = Readline.readline($prompt, true)
+# Load history.
+history_dir = arguments.directory.nil? ? Dir.pwd : arguments.directory
+history_file = File.join(history_dir, history_file_basename)
+if File.exist? history_file
+  fp = Pathname.new history_file
+  if fp.file?
+    fp.readlines.each { |line| Readline::HISTORY << line.chomp  }
+  else
+    puts "No history, not a file: #{history_file}"
+  end
+end
+
+while line = Readline.readline($prompt, false)
+  line.strip!
   parts = line.shellsplit
   next if parts.length == 0
   h = $handler[parts[0]]
   if h.nil?
     puts "Unknown command: #{parts[0]}"
-  else
-    h.handle(parts)
+    next
   end
+  if Readline::HISTORY.length == 0 or Readline::HISTORY[Readline::HISTORY.length - 1] != line
+    Readline::HISTORY.push line
+  end
+  h.handle(parts)
   break if $exiting
 
   # Run helper commands.
@@ -1003,6 +1022,16 @@ while line = Readline.readline($prompt, true)
   # re-run program ... Like "recall program ..." and "run program" so uses
   #  current for parts that have not been recalled.
   #  recall allows for editing values, re-run direct re-use
+end
+
+# Save history.
+begin
+  fp = Pathname.new history_file
+  fp.open('w') do |f|
+    Readline::HISTORY.to_a.last(history_file_max_lines).each { |l| f.puts l }
+  end
+rescue Errno::EACCES
+  puts "Failed to write history to: #{history_file}"
 end
 
 $lackey.finish
