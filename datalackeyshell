@@ -325,24 +325,12 @@ class HelpHandler < Handler
 
   def handle(parts)
     short = parts[0] == 'usage'
-    printed = Set.new
-    if parts.length == 1
-      $handler.keys.sort.each do |key|
-        object = $handler[key]
-        next if printed.include? object
+    keys = (parts.length > 1) ? parts[1...parts.length] : $handler.keys
+    keys.sort.each do |key|
+      if $handler.include? key
         $handler[key].help(short)
-        printed.add object
-      end
-    else
-      parts[1...parts.length].sort.each do |key|
-        if $handler.include? key
-          object = $handler[key]
-          next if printed.include? object
-          $handler[key].help(short)
-          printed.add object
-        else
-          puts "Unknown command: #{key}"
-        end
+      else
+        puts "Unknown command: #{key}"
       end
     end
   end
