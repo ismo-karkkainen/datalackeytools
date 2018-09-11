@@ -1034,7 +1034,7 @@ while line = Readline.readline($prompt, false)
     puts "Unknown command: #{parts[0]}"
     next
   end
-  if Readline::HISTORY.length == 0 or Readline::HISTORY[Readline::HISTORY.length - 1] != line
+  if $stdin.tty? and (Readline::HISTORY.length == 0 or Readline::HISTORY[Readline::HISTORY.length - 1] != line)
     Readline::HISTORY.push line
   end
   h.handle(parts)
@@ -1049,13 +1049,15 @@ while line = Readline.readline($prompt, false)
 end
 
 # Save history.
-begin
-  fp = Pathname.new history_file
-  fp.open('w') do |f|
-    Readline::HISTORY.to_a.last(history_file_max_lines).each { |l| f.puts l }
+if $stdin.tty?
+  begin
+    fp = Pathname.new history_file
+    fp.open('w') do |f|
+      Readline::HISTORY.to_a.last(history_file_max_lines).each { |l| f.puts l }
+    end
+  rescue Errno::EACCES
+    puts "Failed to write history to: #{history_file}"
   end
-rescue Errno::EACCES
-  puts "Failed to write history to: #{history_file}"
 end
 
 $lackey.finish
