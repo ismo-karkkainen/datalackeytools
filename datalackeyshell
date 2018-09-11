@@ -355,7 +355,7 @@ class ExitHandler < Handler
     begin
       @code = Integer(parts[1])
     rescue ArgumentError
-      usage
+      print_usage
       $exiting = false
     end
   end
@@ -364,7 +364,7 @@ $handler['exit'] = ExitHandler.new
 
 class ListHandler < Handler
   def initialize
-    @usage = 'list|ls'
+    @usage = 'list'
     @help = "Prints out the list of labels."
     incoming 'list'
   end
@@ -375,8 +375,7 @@ class ListHandler < Handler
     relay "[#{id},\"list\"]"
   end
 end
-$handler['ls'] = ListHandler.new
-$handler['list'] = $handler['ls']
+$handler['list'] = ListHandler.new
 
 class SetHandler < Handler
   def initialize
@@ -417,7 +416,7 @@ $handler['get'] = GetHandler.new
 
 class RenameHandler < Handler
   def initialize
-    @usage = "mv label new-label ..."
+    @usage = "rename label new-label ..."
     @help = "Re-labels values. Takes label pairs."
     incoming 'rename'
   end
@@ -434,11 +433,11 @@ class RenameHandler < Handler
     prompt_print "#{parsed[3]} -> #{parsed[4]}"
   end
 end
-$handler['mv'] = RenameHandler.new
+$handler['rename'] = RenameHandler.new
 
 class DeleteHandler < Handler
   def initialize
-    @usage = "rm label ..."
+    @usage = "remove label ..."
     @help = "Removes labels from storage."
   end
 
@@ -449,7 +448,7 @@ class DeleteHandler < Handler
     relay "[#{id},\"delete\",\"#{names}\"]"
   end
 end
-$handler['rm'] = DeleteHandler.new
+$handler['remove'] = DeleteHandler.new
 
 class StorageInfoHandler < Handler
   def initialize
@@ -527,8 +526,8 @@ $handler['version'] = VersionHandler.new
 
 class EchoHandler < Handler
   def initialize
-    @usage = "echo in|out on|off"
-    @help = "Set printing datalackey input or output on or off."
+    @usage = "lackey in|out on|off"
+    @help = "Set the printing of datalackey input or output on or off."
   end
 
   def handle(parts)
@@ -539,7 +538,7 @@ class EchoHandler < Handler
     $presenter.echo = parts[2] == 'on' if parts[1] == 'out'
   end
 end
-$handler['echo'] = EchoHandler.new
+$handler['lackey'] = EchoHandler.new
 
 class NotifyHandler < Handler
   def initialize
@@ -595,21 +594,30 @@ $handler['history'] = HistoryHandler.new
 
 class InputHandler < Handler
   def initialize
-    @usage = "input[+] [name : label | name = value ...]"
-    @help = "Map input name to label/value."
+    @usage = "input[+] [name : label | name = value ...]\ninput?"
+    @help = "Map input name to label/value or print mapping."
     @extended_help = "  Passes label as name, or value of name as given directly.\n"\
       "  Allowed values are integers and strings. Quote '\"string value\"'.\n"\
-      "  input+ appends to current mapping, input clears it first."
+      "  input+ appends to current mapping, input clears it first.\n"\
+      "  input? prints current mapping."
     @order = Array.new
     @mapping = Hash.new
   end
 
   def handle(parts)
-    return print_usage() if (parts.length % 3) != 1
-    if parts[0] == 'input'
-      @order.clear
-      @mapping.clear
+    if parts[0] == 'input?'
+      return print_usage() if parts.length != 1
+      @order.each do |name|
+        direct, val = @mapping[name]
+        t = direct ? "=" : ":"
+        puts "#{name} #{t} #{val}"
+      end
+      return
     end
+    return print_usage() if (parts.length % 3) != 1
+    clear = parts[0] == 'input'
+    order_in = Array.new
+    map_in = Hash.new
     idx = 1
     while idx < parts.length
       name = parts[idx]
@@ -617,26 +625,27 @@ class InputHandler < Handler
       direct = parts[idx + 1] == '='
       src = parts[idx + 2]
       idx += 3
-      if @mapping.has_key? name
+      if map_in.has_key?(name) or not clear and @mapping.has_key?(name)
         puts "Error: #{name} already in mapping."
-        break
+        return
       end
       if direct
         begin
           check = JSON.load(src)
         rescue JSON::ParserError
           puts "Error: #{name} value is invalid: #{src}"
-          break
+          return
         end
       end
-      @order.push name
-      @mapping[name] = [direct, src]
+      order_in.push name
+      map_in[name] = [direct, src]
     end
-    @order.each do |name|
-      direct, val = @mapping[name]
-      t = direct ? "=" : ":"
-      puts "#{name} #{t} #{val}"
+    if clear
+      @order.clear
+      @mapping.clear
     end
+    @order.concat order_in
+    @mapping.merge! map_in
   end
 
   def command_part
@@ -654,15 +663,17 @@ class InputHandler < Handler
 end
 $handler['input'] = InputHandler.new
 $handler['input+'] = $handler['input']
+$handler['input?'] = $handler['input']
 
 class OutputHandler < Handler
   def initialize
     @usage = "output[+] [label name ...]\n"\
-      "output-naming prefix postfix"
-    @help = "Map output name to label."
+      "output-naming prefix postfix\noutput?"
+    @help = "Map output name to label or print out current mapping."
     @extended_help = "  Maps name to label. Using null as label discards that name.\n"\
       "  output+ adds to current mapping, output clears it first.\n"\
-      "  output-naming sets prefix and postfix to names that have no match."
+      "  output-naming sets prefix and postfix to names that have no match.\n"\
+      "  output? prints out current mapping."
     @mapping = Hash.new
     @prefix = nil
     @postfix = nil
@@ -670,44 +681,41 @@ class OutputHandler < Handler
 
   def handle(parts)
     return print_usage() if (parts.length % 2) != 1
-    if parts[0] == 'output'
-      @mapping.clear
-      @prefix = nil
-      @postfix = nil
+    if parts[0] == 'output?'
+      return print_usage() if parts.length != 1
+      puts("Prefix: #{@prefix}") unless @prefix.nil?
+      puts("Postfix: #{@postfix}") unless @postfix.nil?
+      @mapping.keys.sort.each do |name|
+        label = @mapping[name]
+        puts "\"#{name}\" \"#{label}\""
+      end
+      return
     end
     if parts[0] == 'output-naming'
       return print_usage() if parts.length != 3
       @prefix = parts[1].length ? parts[1] : nil
       @postfix = parts[2].length ? parts[2] : nil
-    else
-      idx = 1
-      while idx < parts.length
-        name = parts[idx]
-        src = parts[idx + 1]
-        idx += 2
-        if @mapping.has_key? name
-          old = @mapping[name]
-          puts "Overwrote #{name} old value #{old} with #{src}"
-        end
-        @mapping[name] = src
-      end
+      return
     end
-    puts("Prefix: #{@prefix}") unless @prefix.nil?
-    puts("Postfix: #{@postfix}") unless @postfix.nil?
-    @mapping.keys.sort.each do |name|
-      label = @mapping[name]
-      puts "\"#{name}\" \"#{label}\""
+    if parts[0] == 'output'
+      @mapping.clear
+      @prefix = nil
+      @postfix = nil
+    end
+    idx = 1
+    while idx < parts.length
+      name = parts[idx]
+      src = parts[idx + 1]
+      idx += 2
+      puts("#{name} : #{@mapping[name]} -> #{src}") if @mapping.has_key? name
+      @mapping[name] = src
     end
   end
 
   def command_part
     command = ''
-    if not @prefix.nil?
-      command = ",\"output-prefix\",\"#{@prefix}\""
-    end
-    if not @postfix.nil?
-      command = ",\"output-postfix\",\"#{@postfix}\""
-    end
+    command.concat(",\"output-prefix\",\"#{@prefix}\"") unless @prefix.nil?
+    command.concat(",\"output-postfix\",\"#{@postfix}\"") unless @postfix.nil?
     @mapping.keys.sort.each do |name|
       val = @mapping[name]
       val = "\"#{val}\"" unless val == 'null'
@@ -719,52 +727,53 @@ end
 $handler['output'] = OutputHandler.new
 $handler['output+'] = $handler['output']
 $handler['output-naming'] = $handler['output']
+$handler['output?'] = $handler['output']
 
 class EnvHandler < Handler
   def initialize
-    @usage = "env[+] [var value ...]\nenv-clear"
+    @usage = "env[+] [var value ...]\nenv-clear\nenv?"
     @help = "Set environment variable to value."
     @extended_help = "  Sets var to value.\n"\
       "  env+ appends to current set, env clears it first.\n"\
-      "  env-clear ignores other than currently set environment."
+      "  env-clear ignores other than currently set environment.\n"\
+      "  env? prints out currently set environment."
     @mapping = Hash.new
     @clear = false
   end
 
   def handle(parts)
     return print_usage() if (parts.length % 2) != 1
-    if parts[0] == 'env'
-      @mapping.clear
-      @clear = false
+    if parts[0] == 'env?'
+      puts "Restrict environment to given values."  if @clear == true
+      @mapping.keys.sort.each do |name|
+        value = @mapping[name]
+        puts "\"#{name}\" \"#{value}\""
+      end
+      return
     end
     if parts[0] == 'env-clear'
       return print_usage() if parts.length != 1
       @clear = true
-    else
-      idx = 1
-      while idx < parts.length
-        name = parts[idx]
-        value = parts[idx + 1]
-        idx += 2
-        if @mapping.has_key? name
-          old = @mapping[name]
-          puts "Overwrote #{name} value #{old} with #{value}"
-        end
-        @mapping[name] = value
-      end
+      return
     end
-    puts "Restrict environment to given values."  if @clear == true
-    @mapping.keys.sort.each do |name|
-      value = @mapping[name]
-      puts "\"#{name}\" \"#{value}\""
+    if parts[0] == 'env'
+      @mapping.clear
+      @clear = false
+    end
+    idx = 1
+    while idx < parts.length
+      name = parts[idx]
+      value = parts[idx + 1]
+      idx += 2
+      puts("#{name} : #{@mapping[name]} -> #{value}") if @mapping.has_key? name
+      @mapping[name] = value
     end
   end
 
   def command_part
     command = @clear ? ",\"env-clear\"" : ''
     @mapping.keys.sort.each do |name|
-      val = @mapping[name]
-      command.concat ",\"env\",\"#{name}\",\"#{val}\""
+      command.concat ",\"env\",\"#{name}\",\"#{@mapping[name]}\""
     end
     return command
   end
@@ -772,23 +781,26 @@ end
 $handler['env'] = EnvHandler.new
 $handler['env+'] = $handler['env']
 $handler['env-clear'] = $handler['env']
+$handler['env?'] = $handler['env']
 
 class ArgsHandler < Handler
   def initialize
-    @usage = "args[+] [value ...]"
-    @help = "Add program arguments."
-    @extended_help = "  args+ appends to current list, args clears it first."
+    @usage = "args[+] [value ...]\nargs?"
+    @help = "Add program arguments or print them."
+    @extended_help = "  args+ appends to current list, args clears it first.\n"\
+      "  args? prints out current arguments."
     @args = Array.new
   end
 
   def handle(parts)
-    if parts[0] == 'args'
-      @args.clear
+    if parts[0] == 'args?'
+      @args.each do |arg|
+        puts "\"#{arg}\""
+      end
+      return
     end
+    @args.clear if parts[0] == 'args'
     @args.concat parts[1...parts.length]
-    @args.each do |arg|
-      puts "\"#{arg}\""
-    end
   end
 
   def command_part
@@ -801,6 +813,7 @@ class ArgsHandler < Handler
 end
 $handler['args'] = ArgsHandler.new
 $handler['args+'] = $handler['args']
+$handler['args?'] = $handler['args']
 
 class ChannelHandler < Handler
   def initialize
@@ -816,15 +829,15 @@ class ChannelHandler < Handler
   def handle(parts)
     if parts[0] == 'channel?'
       return print_usage() unless parts.length == 1
-    else
-      return print_usage() unless parts.length == 3
-      return print_usage() unless @channels.include? parts[1]
-      return print_usage() unless ['json', 'bytes', 'none'].include? parts[2]
-      @channels[parts[1]] = parts[2]
+      @channels.keys.sort.each do |c|
+        puts "#{c} #{@channels[c]}"
+      end
+      return
     end
-    @channels.keys.sort.each do |c|
-      puts "#{c} #{@channels[c]}"
-    end
+    return print_usage() unless parts.length == 3
+    return print_usage() unless @channels.include? parts[1]
+    return print_usage() unless ['json', 'bytes', 'none'].include? parts[2]
+    @channels[parts[1]] = parts[2]
   end
 
   def command_part
@@ -852,10 +865,9 @@ class RunHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length < 3 or 4 < parts.length
-    return print_usage() if parts.length == 4 and parts[3] != 'eof'
+    return print_usage() if parts.length == 4 and parts[3] != 'close'
     id = parts[1]
     exe = parts[2]
-    eof = parts.length == 4
     command = "[\"#{id}\",\"run\""
     c = $handler['input'].command_part
     command.concat(c) unless c.empty?
@@ -863,7 +875,7 @@ class RunHandler < Handler
     command.concat(c) unless c.empty?
     c = $handler['channel'].command_part
     command.concat(c) unless c.empty?
-    command.concat(',"end-feed"') if eof
+    command.concat(',"end-feed"') if parts.length == 4
     c = $handler['env'].command_part
     command.concat(c) unless c.empty?
     command.concat ",\"program\",\"#{exe}\""
@@ -904,9 +916,9 @@ class PsHandler < Handler
 
   def present_other(parsed, json)
     return if parsed[2] != '' or parsed.length < 4
-    report = 'Identifier : pid'
+    report = " PID\t: Identifier"
     parsed[3].keys.sort.each do |id|
-      report.concat "\n#{id} : #{parsed[3][id]}"
+      report.concat "\n #{parsed[3][id]}\t: #{id}"
     end
     prompt_print report
   end
