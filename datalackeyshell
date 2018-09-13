@@ -567,6 +567,19 @@ class NotifyHandler < Handler
 end
 $handler['notify'] = NotifyHandler.new
 
+def scan_history(regexps)
+  matched = Array.new
+  Readline::HISTORY.take(Readline::HISTORY.length - 1).each do |h|
+    match = regexps.length == 0
+    regexps.each do |e|
+      match = e.match(h)
+      break if match
+    end
+    matched.push(h) if match
+  end
+  return matched
+end
+
 class HistoryHandler < Handler
   def initialize
     @usage = "history [regex ...]"
@@ -578,17 +591,78 @@ class HistoryHandler < Handler
     parts[1...parts.length].each do |e|
       exps.push Regexp.new(e)
     end
-    Readline::HISTORY.take(Readline::HISTORY.length - 1).each do |h|
-      match = exps.length == 0
-      exps.each do |e|
-        match = e.match(h)
-        break if match
-      end
-      puts(h) if match
+    scan_history(exps).each do |h|
+      puts h
     end
   end
 end
 $handler['history'] = HistoryHandler.new
+
+class RecallHandler < Handler
+  def initialize
+    @usage = "recall [identifier]"
+    @help = "Fetch last \"run identifier\" related settings from history."
+    @extended_help = "  Finds from history the input, output, env, arg, and channel settings\n"\
+      "  that were in effect when last run with given identifier was done.\n"\
+      "  If no identifier is given, last run command identifier is used.\n"\
+      "  Prints the lines found from history."
+  end
+
+  def scan_until_first(new_to_old, exps)
+    regexps = Array.new
+    exps.each do |e|
+      regexps.push Regexp.new(e)
+    end
+    matches = Array.new
+    new_to_old.each do |c|
+      for k in 0...regexps.length
+        next unless regexps[k].match(c)
+        matches.push(c)
+        return matches if k == 0
+        break
+      end
+    end
+    return matches
+  end
+
+  def print_until_first(new_to_old, exps)
+    n2o = scan_until_first(new_to_old, exps)
+    while not n2o.empty?
+      puts n2o.pop
+    end
+  end
+
+  def handle(parts)
+    return print_usage() if parts.length > 2
+    id_given = parts.length == 2
+    es = [ '^input[+]?[[:blank:]]+', '^output[+]?[[:blank:]]+',
+      '^arg[+]?[[:blank:]]+', '^env[+]?[[:blank:]]+', '^env-clear$',
+      '^channel[[:blank:]]+', '^exit' ]
+    es.push('^run[[:blank:]]+' + (id_given ? parts[1] + '[[:blank:]]+' : ''))
+    exps = Array.new
+    es.each do |e|
+      exps.push Regexp.new(e)
+    end
+    candidates = scan_history(exps)
+    # Drop everything after the last matching run command.
+    while not candidates.empty? and not candidates.last.start_with? 'run'
+      candidates.pop
+    end
+    # Pick commands before last exit. Reverses order.
+    session = Array.new
+    while not candidates.empty? and not candidates.last.start_with? 'exit'
+      session.push candidates.pop
+    end
+    print_until_first(session, [ '^channel[[:blank:]]+in[[:blank:]]' ])
+    print_until_first(session, [ '^channel[[:blank:]]+out[[:blank:]]' ])
+    print_until_first(session, [ '^channel[[:blank:]]+err[[:blank:]]' ])
+    print_until_first(session, [ '^env[[:blank:]]', '^env[+][[:blank:]]', '^env-clear$' ])
+    print_until_first(session, [ '^arg[[:blank:]]', '^arg[+][[:blank:]]' ])
+    print_until_first(session, [ '^input[[:blank:]]', '^input[+][[:blank:]]' ])
+    print_until_first(session, [ '^output[[:blank:]]', '^output[+][[:blank:]]', '^output-naming[[:blank:]]' ])
+  end
+end
+$handler['recall'] = RecallHandler.new
 
 # Run command handlers
 
@@ -783,23 +857,23 @@ $handler['env+'] = $handler['env']
 $handler['env-clear'] = $handler['env']
 $handler['env?'] = $handler['env']
 
-class ArgsHandler < Handler
+class ArgHandler < Handler
   def initialize
-    @usage = "args[+] [value ...]\nargs?"
+    @usage = "arg[+] [value ...]\narg?"
     @help = "Add program arguments or print them."
-    @extended_help = "  args+ appends to current list, args clears it first.\n"\
-      "  args? prints out current arguments."
+    @extended_help = "  arg+ appends to current list, arg clears it first.\n"\
+      "  arg? prints out current arguments."
     @args = Array.new
   end
 
   def handle(parts)
-    if parts[0] == 'args?'
+    if parts[0] == 'arg?'
       @args.each do |arg|
         puts "\"#{arg}\""
       end
       return
     end
-    @args.clear if parts[0] == 'args'
+    @args.clear if parts[0] == 'arg'
     @args.concat parts[1...parts.length]
   end
 
@@ -811,9 +885,9 @@ class ArgsHandler < Handler
     return command
   end
 end
-$handler['args'] = ArgsHandler.new
-$handler['args+'] = $handler['args']
-$handler['args?'] = $handler['args']
+$handler['arg'] = ArgHandler.new
+$handler['arg+'] = $handler['arg']
+$handler['arg?'] = $handler['arg']
 
 class ChannelHandler < Handler
   def initialize
@@ -859,7 +933,7 @@ class RunHandler < Handler
     @usage = "run identifier program [close]"
     @help = "Runs a program."
     @extended_help = "  Runs program using identifier closing the input if close is given.\n"\
-      "  Uses current input, output, channel, env, and args setting."
+      "  Uses current input, output, channel, env, and arg setting."
     incoming 'run'
   end
 
@@ -879,7 +953,7 @@ class RunHandler < Handler
     c = $handler['env'].command_part
     command.concat(c) unless c.empty?
     command.concat ",\"program\",\"#{exe}\""
-    c = $handler['args'].command_part
+    c = $handler['arg'].command_part
     command.concat(c) unless c.empty?
     command.concat ']'
     relay command
@@ -1025,7 +1099,7 @@ if File.exist? history_file
   end
 end
 
-while line = Readline.readline($prompt, false)
+while not $exiting and line = Readline.readline($prompt, false)
   line.strip!
   parts = line.shellsplit
   next if parts.length == 0
@@ -1038,14 +1112,11 @@ while line = Readline.readline($prompt, false)
     Readline::HISTORY.push line
   end
   h.handle(parts)
-  break if $exiting
+end
 
-  # Run helper commands.
-  # recall program input output channel env args Fetches value from
-  #  last run of program, without argumets fetches all.
-  # re-run program ... Like "recall program ..." and "run program" so uses
-  #  current for parts that have not been recalled.
-  #  recall allows for editing values, re-run direct re-use
+# Ensure there is exit in case ctrl-D was pressed so that recall works.
+if Readline::HISTORY.length == 0 or not Readline::HISTORY[Readline::HISTORY.length - 1].start_with? 'exit'
+  Readline::HISTORY.push 'exit'
 end
 
 # Save history.
