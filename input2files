@@ -1,0 +1,37 @@
+#!/usr/bin/env ruby
+
+require 'json'
+require 'pathname'
+
+if ARGV.length != 0
+  STDERR.puts "Usage: input2files"
+  STDERR.puts "  Saves each key:value pair in input JSON object."
+  STDERR.puts "  File name is key and value is contents."
+  STDERR.puts "  Directories are created if key seems to contain them."
+  exit 1
+end
+
+begin
+  obj = JSON.parse(STDIN.read)
+  obj.each do |key, value|
+    fp = Pathname.new key
+    dn = fp.dirname
+    begin
+      dn.mkpath
+    rescue Errno::EEXIST
+      STDERR.puts "Failed to create path in #{key}"
+      exit 2
+    end
+    begin
+      fp.open('w') do |f|
+        f.write value
+      end
+    rescue Errno::EACCES, Errno::ENOTDIR, Errno::ENOENT
+      STDERR.puts "Failed to write to #{key}"
+      exit 2
+    end
+  end
+rescue JSON::ParserError
+  STDERR.puts "Error parsing input."
+  exit 1
+end
