@@ -44,7 +44,7 @@ class Arguments
       end
       opts.on_tail("-h", "--help", "Print this help and exit.") do
         puts opts
-        exit
+        exit 1
       end
       opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
         @lackey = e
@@ -56,17 +56,17 @@ class Arguments
     parser.parse!(args)
     # Perform sanity checks on the values.
     if @memory and not (@directory.nil? and @permissions.nil?)
-      puts "Cannot use both --memory and --directory or --permissions."
-      exit
+      STDERR.puts "Cannot use both --memory and --directory or --permissions."
+      exit 1
     end
     if not @memory
       if @directory.nil?
         @directory = Dir.pwd
       elsif not Dir.exist? @directory
-        puts "Given directory does not exist: #{@directory}"
+        STDERR.puts "Given directory does not exist: #{@directory}"
         exit 1
       end
-      @permissions = "600" if @permissions == nil
+      @permissions = "600" if @permissions.nil?
     end
   end
 end
@@ -86,7 +86,7 @@ if exe == nil
   puts("datalackey not found.") if exe == nil
 else
   if not File.exist?(exe) or not File.executable?(exe)
-    puts "Not found or not an executable: #{exe}"
+    STDERR.puts "Not found or not an executable: #{exe}"
   end
 end
 exit(1) if exe == nil
@@ -140,6 +140,12 @@ class LackeyProcess
       end
       @stderr.close
     end
+    @last_identifier = 0
+  end
+
+  def get_identifier
+    @last_identifier += 1
+    return @last_identifier
   end
 
   def relay(message)
@@ -231,18 +237,6 @@ class OutputPresenter
   end
 end
 $presenter = OutputPresenter.new
-
-class IdentifierGenerator
-  def initialize
-    @last = 0
-  end
-
-  def get
-    @last += 1
-    return @last
-  end
-end
-$identifier = IdentifierGenerator.new
 
 # Notification presenters
 
@@ -371,8 +365,7 @@ class ListHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length != 1
-    id = $identifier.get
-    relay "[#{id},\"list\"]"
+    relay "[#{$lackey.get_identifier},\"list\"]"
   end
 end
 $handler['list'] = ListHandler.new
@@ -401,9 +394,8 @@ class GetHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length < 2
-    id = $identifier.get
     names = parts[1...parts.length].join('","')
-    relay "[#{id},\"get\",\"#{names}\"]"
+    relay "[#{$lackey.get_identifier},\"get\",\"#{names}\"]"
   end
 
   def present_other(parsed, json)
@@ -423,9 +415,8 @@ class RenameHandler < Handler
 
   def handle(parts)
     return print_usage() if (parts.length - 1) % 2 != 0
-    id = $identifier.get
     names = parts[1...parts.length].join('","')
-    relay "[#{id},\"rename\",\"#{names}\"]"
+    relay "[#{$lackey.get_identifier},\"rename\",\"#{names}\"]"
   end
 
   def present_other(parsed, json)
@@ -443,9 +434,8 @@ class DeleteHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length == 1
-    id = $identifier.get
     names = parts[1...parts.length].join('","')
-    relay "[#{id},\"delete\",\"#{names}\"]"
+    relay "[#{$lackey.get_identifier},\"delete\",\"#{names}\"]"
   end
 end
 $handler['remove'] = DeleteHandler.new
@@ -459,8 +449,7 @@ class StorageInfoHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length != 1
-    id = $identifier.get
-    relay "[#{id},\"storage-info\"]"
+    relay "[#{$lackey.get_identifier},\"storage-info\"]"
   end
 
   def present_other(parsed, json)
@@ -490,8 +479,7 @@ class PingHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length != 1
-    id = $identifier.get
-    relay "[#{id},\"no-op\"]"
+    relay "[#{$lackey.get_identifier},\"no-op\"]"
   end
 
   def present_other(parsed, json)
@@ -509,8 +497,7 @@ class VersionHandler < Handler
 
   def handle(parts)
     return print_usage() if parts.length != 1
-    id = $identifier.get
-    relay "[#{id},\"version\"]"
+    relay "[#{$lackey.get_identifier},\"version\"]"
   end
 
   def present_other(parsed, json)
@@ -984,8 +971,7 @@ class PsHandler < Handler
 
   def handle(parts)
     return print_usage() unless parts.length == 1
-    id = $identifier.get
-    $lackey.relay "[#{id},\"processes\"]"
+    $lackey.relay "[#{$lackey.get_identifier},\"processes\"]"
   end
 
   def present_other(parsed, json)
@@ -1008,9 +994,8 @@ class KillHandler < Handler
 
   def handle(parts)
     return print_usage() unless parts.length > 1
-    id = $identifier.get
     names = parts[1...parts.length].join('","')
-    relay "[#{id},\"terminate\",\"#{names}\"]"
+    relay "[#{$lackey.get_identifier},\"terminate\",\"#{names}\"]"
   end
 
   def present_other(parsed, json)
@@ -1032,8 +1017,7 @@ class FeedHandler < Handler
     return print_usage() unless parts.length > 1
     c = $handler['input'].command_part
     parts[1...parts.length].each do |procid|
-      id = $identifier.get
-      command = "[\"#{id}\",\"feed\",\"#{procid}\""
+      command = "[#{$lackey.get_identifier},\"feed\",\"#{procid}\""
       command.concat(c) unless c.empty?
       command.concat ']'
       relay command
@@ -1055,9 +1039,8 @@ class EndFeedHandler < Handler
 
   def handle(parts)
     return print_usage() unless parts.length > 1
-    id = $identifier.get
     names = parts[1...parts.length].join('","')
-    relay "[#{id},\"end-feed\",\"#{names}\"]"
+    relay "[#{$lackey.get_identifier},\"end-feed\",\"#{names}\"]"
   end
 
   def present_other(parsed, json)
