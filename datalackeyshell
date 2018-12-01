@@ -44,7 +44,7 @@ class Arguments
       end
       opts.on_tail("-h", "--help", "Print this help and exit.") do
         puts opts
-        exit 1
+        exit 0
       end
       opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
         @lackey = e
@@ -185,13 +185,14 @@ $lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arg
 
 $prompt = '> '
 def reprompt
+  return unless @stdin.tty?
   print $prompt
   STDOUT.flush
   Readline.redisplay
 end
 
 def prompt_print(message)
-  puts
+  puts() if @stdin.tty?
   puts message
   reprompt
 end
@@ -805,7 +806,7 @@ class EnvHandler < Handler
   def handle(parts)
     return print_usage() if (parts.length % 2) != 1
     if parts[0] == 'env?'
-      puts "Restrict environment to given values."  if @clear == true
+      puts("Restrict environment to given values.") if @clear == true
       @mapping.keys.sort.each do |name|
         value = @mapping[name]
         puts "\"#{name}\" \"#{value}\""
@@ -907,7 +908,7 @@ class ChannelHandler < Handler
       next if @channels[c] == 'none'
       direction = (c == 'in') ? 'in' : 'out'
       fmt = (@channels[c] == 'json') ? 'JSON' : @channels[c]
-      command.concat ",\"channel\",\"#{direction}\",\"#{fmt}\",\"std#{c}\""
+      command.concat ",\"#{direction}\",\"#{fmt}\",\"std#{c}\""
     end
     return command
   end
@@ -1074,11 +1075,11 @@ $handler['raw'] = RawHandler.new
 history_dir = arguments.directory.nil? ? Dir.pwd : arguments.directory
 history_file = File.join(history_dir, history_file_basename)
 if File.exist? history_file
-  fp = Pathname.new history_file
-  if fp.file?
+  begin
+    fp = File.new history_file
     fp.readlines.each { |line| Readline::HISTORY << line.chomp  }
-  else
-    puts "No history, not a file: #{history_file}"
+  rescue StandardError
+    STDERR.puts "Failed to read history file: #{history_file}"
   end
 end
 
@@ -1109,8 +1110,8 @@ if $stdin.tty?
     fp.open('w') do |f|
       Readline::HISTORY.to_a.last(history_file_max_lines).each { |l| f.puts l }
     end
-  rescue Errno::EACCES
-    puts "Failed to write history to: #{history_file}"
+  rescue StandardError
+    STDERR.puts "Failed to write history file: #{history_file}"
   end
 end
 
