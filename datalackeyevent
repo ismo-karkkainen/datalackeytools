@@ -1,0 +1,364 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'yaml'
+require 'json'
+
+$CMDOUT = STDOUT
+$USEROUT = STDERR
+
+root_dir = Dir.pwd
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: datalackeyevent [options] event-files..."
+  opts.separator ""
+  opts.separator "Options:"
+  opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
+    $CMDOUT = STDOUT
+    $USEROUT = STDERR
+  end
+  opts.on('-e', '--stderr', 'Use stderr as command output, stdout for user.') do
+    $CMDOUT = STDERR
+    $USEROUT = STDOUT
+  end
+  opts.on_tail('-h', '--help', 'Print this help and exit.') do
+    $USEROUT.puts opts
+    exit 0
+  end
+end
+parser.parse!
+
+
+# Act:
+# All commands are methods in some internal object.
+# All command receive location information in case something need to report it.
+# command, creates ID (unless there appears to be one) and sends to datalackey.
+#  Using the id, stores the command and location for resolving errors.
+# report, prints the list it is given and replaces variables with values.
+# _store_version, stores version and command syntax info
+# _check_command, takes input and figures out how it fails to match what was
+#  sent. Needs command id to command mapping for sent commands.
+
+# All variables specified in inputs pattern accompany the event. $input always.
+
+class HandlersAndStuff
+  attr_accessor :items, :variables
+
+  def initialize(raw_items)
+    @items = []
+    $variables = {}
+    @location = nil
+    @identifier2location = {}
+    raw_items.each do |info|
+      @location = info[:location]
+      item = info[:item]
+      if item.has_key?('inputs')
+        unless item.has_key? 'trigger'
+          $USEROUT.puts "Warning: inputs without trigger. No effect."
+          location_dump
+          next
+        end
+        # Deal with event setting immediately.
+      elsif item.has_key? 'act'
+        act = item['act']
+        item['act'] = [ act ] unless act.is_a? Array
+        if item.has_key?('respond')
+          resp = item['respond']
+          resp = [ resp ] unless resp.is_a? Array
+          item['respond'] = {}
+          resp.each do |r|
+            item['respond'][r] = nil
+          end
+          @items << info
+        else
+          act({}, item['act'])
+        end
+      elsif item.has_key? 'trigger'
+        $USEROUT.puts "Trigger without inputs."
+        location_dump(4)
+      elsif item.has_key? 'respond'
+        $USEROUT.puts "Respond without act."
+        location_dump(4)
+      else
+        $USEROUT.puts "Unrecognized item with keys: #{item}"
+        location_dump(4)
+      end
+    end
+  end
+
+  def trigger(location, event_name, event_variables)
+    @items.each do |item|
+      next unless item[:item]['respond'].has_key? event_name # 'respond' present
+      @location = item[:location]
+      act(event_variables, item[:item]["act"])
+    end
+  end
+
+  def location_dump(exitcode=nil)
+    unless @location.nil?
+      $USEROUT.puts "#{@location[:source]} : #{@location[:index]}"
+      @location[:history].each do |loc|
+        $USEROUT.puts loc
+      end
+    end
+    exit(exitcode) unless exitcode.nil?
+  end
+
+  def get_binding
+    return binding
+  end
+
+  def map(key, event_variables)
+    if event_variables.has_key? key
+      return event_variables[values]
+    elsif @variables.has_key? key
+      return $variables[values]
+    end
+    return key
+  end
+  # maintain events with variable mappings somehow. If event trigger is like
+  # function call then we have stack of those and use top-most.
+
+  def act(event_variables, list_of_mappings)
+    list_of_mappings.each do |mapping|
+      if mapping.is_a? Hash
+        keys = mapping.keys
+        if keys.length != 1
+          $USEROUT.puts "Only one key accepted."
+          location_dump(2)
+        end
+        method = keys[0]
+        values = mapping[method]
+      else # Assume string and no arguments given.
+        method = mapping
+        values = nil
+      end
+      if values.is_a? Array
+        mapped = []
+        values.each do |v|
+          mapped << map(v, event_variables)
+        end
+      else
+        mapped = map(values, event_variables)
+      end
+      begin
+        send(method, mapped)
+      rescue NoMethodError
+        $USEROUT.puts "Attempt to call missing method: #{method}"
+        location_dump(2)
+        exit 1
+      end
+    end
+  end
+
+  def identifier
+    # Construct something that allows us to find the location later.
+    id = @location[:source] + ("@" + @location[:index].to_s)
+    @identifier2location[id] = @location
+    return id
+  end
+
+  def command(arguments)
+    if arguments.is_a? Array
+      case arguments.length
+      when 0
+        $USEROUT.puts "No command."
+        location_dump(2)
+      when 1
+        cmd = [ identifier(), arguments[0] ]
+      else
+        cmd = []
+        # Ought to check if this is any available command.
+        cmd << identifier() if arguments[0] == "run"
+        cmd.concat arguments
+      end
+    else
+      cmd = [ identifier(), arguments ]
+    end
+    $CMDOUT.puts JSON.generate(cmd)
+  end
+
+  def report(arguments)
+    if arguments.is_a? Array
+      $USEROUT.puts arguments.join('')
+    else
+      $USEROUT.puts arguments
+    end
+  end
+
+  def ruby(program)
+  end
+end
+
+# Could maintain list of running programs to use end-feed with on error?
+
+# Things like end-feed could be variables and there are some functions that
+# are called and their place replaced with return value just like variable
+# checks. Finally flatten the list. Treat values like variables that change
+# value automatically.
+
+# Except for run and feed the commands are simple.
+# The I/O part of run can be rolled into "pipes" and I/O mapping left entirely
+# to the user.
+
+
+# shell: run shell commands.
+#  arguments: list of arguments
+#  command: lines to run.
+#  shell: command-interpreter name
+#  exitcode: variable name to store exit code
+#  stdout: variable name to store standard output
+#  stderr: variable name to store standard error
+#  stdin: list of variables or strings to feed to standard input
+# Take base commands from datalackeyshell and support those.
+
+# Built-in varibles
+# input: last input line as a list.
+# rawinput: the same as string.
+
+built_in_base = %q(
+---
+- respond: _internal_store_version
+  act:
+  - _store_version: $input
+- respond: _internal_check_command
+  act:
+  - _check_command: $input
+- act:
+  - command: version
+- inputs: [ $id, version, "", $version ]
+  trigger: _internal_store_version
+- inputs: [ $id, error, format ]
+  trigger:
+  - _report_input
+  - _end_last_id_feed
+- respond: _end_last_id_feed
+  act:
+  - command:
+    - end-feed
+    - $id
+- inputs:
+  - [ $id, error, ... ]
+  - [ $id, $cmd, error, ... ]
+  - [ $id, $cmd, error, argument, ... ]
+  trigger:
+  - _report_input
+  - _internal_check_command
+  - error_terminate
+- inputs:
+  - [ $id, $cmd, missing, ... ]
+  - [ $id, $cmd, not-open, ... ]
+  - [ $id, $cmd, failed, ... ]
+  trigger:
+  - _report_input
+- respond: _report_input
+  act:
+  - report:
+    - "Received "
+    - $input
+
+)
+
+$built_ins = { 'built-in-base' => built_in_base }
+
+def load_eventfile(filename, current_directory, previous)
+  if $built_ins.has_key? filename
+    fullname = filename
+    contents = YAML.load($built_ins[filename])
+    directory = '(built-in)' # Built-in can include only another built-in.
+  else
+    begin
+      fullname = File.realpath(filename, current_directory)
+      contents = YAML.load(File.read(fullname))
+      directory = File.dirname(fullname)
+    rescue Errno::ENOENT
+      $USEROUT.puts "Could not find #{filename} from #{current_directory}"
+      return nil
+    rescue StandardError
+      $USEROUT.puts "Failed to read #{filename} from #{current_directory}"
+      return nil
+    end
+  end
+  history_reference = " .. #{fullname} : #{index}"
+  current = previous.clone
+  current << history_reference
+  index = 0
+  items = []
+  contents.each do |item|
+    index += 1
+    begin
+      if item.has_key? 'include'
+        name = item['include']
+        included = load_eventfile(name, directory, current)
+        if included.nil?
+          $USEROUT.puts history_reference
+          return nil
+        end
+        items.concat included
+      else
+        items << { :item => item, :location = { :source => fullname, :index => index, :history => previous } }
+      end
+    rescue NoMethodError
+      $USEROUT.puts "Item is not a mapping: #{fullname} : #{index}"
+      return nil
+    end
+  end
+  return items
+end
+
+items = []
+argv.each do |filename|
+  new_items = load_eventfile(filename, root_dir, [])
+  exit(3) if new_items.nil?
+  items.concat new_items
+end
+$globals = new HandlersAndStuff(items)
+
+
+# datalackey output to event mapping. Needs to support finding the most specific
+# mapping so that we can have generic ones and exact ones.
+#  Just sort to decreasing specificness and keep original order.
+#  Pick first match, or keep original order and keep most specific match.
+# mapping from event to actions it affects. Consider regexps. Possible? Yes,
+#  since event is a string list and we can pre-check all matches.
+# mapping from action events to events list to check if triggered?
+# Order of triggering? First in list first.
+
+# Everything is a mapping.
+# event: input: list of input: from-datalackey, event: string
+#  What about mapping multiple events to one? Like errors?
+#  input: List of strings is one item, list of lists multiple.
+#  Also mapping list output to individual events.
+# Event is a string, and event in action can be a regexp.
+# events: actions: mapping with at least action.
+#  events: is a list of strings (regexps) where all are required to trigger.
+#  actions: is a list of whatever they need to be.
+# Eventless actions trigger automatically.
+# If action is to be triggered explicitly from another action, specify unique
+# event name.
+
+# Sort out actions in case some initialize triggers one. Or given variables,
+# should they be handled in the order they are given?
+
+# Data notifications simplified to store/delete. Rename is explicit here so
+# does it need anything? Maybe for completeness.
+# Add could respond to store/rename target and remove to delete/rename source.
+
+# Processes technically need start/end. End-feed signals that it should quit.
+# If termination is desired, one can't really say how long the delay should be.
+
+# Errors with missing values or duplicates ought to be handled.
+
+# All conditions are stored with references to action object condition.
+# List of all conditions is used to turn on individual condition triggers.
+# When condition triggers in object it checks if all have been triggered.
+# Condition trigger checks can be mappings to values when they are constants.
+# Variable names could be used as is and mapping from value to varibles is used
+#  to add another value to check for in the mapping. Hence same trigger type
+#  but multiple values checked at once to cover all variables.
+# Alternatively just go through all in a list. Technically bad as linear time.
+# Could represent in some hashable form.
+# Inverse mapping from value to variable seems needed for speed.
+# Is the order of conditions important? Gather all that fully trigger and
+# then perform first to last.
+
