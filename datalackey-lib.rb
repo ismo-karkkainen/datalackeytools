@@ -2,15 +2,6 @@ require 'yaml'
 require 'json'
 
 
-$category_action2pattern = %q(
----
-- commands:
-  - name: run-background
-    user_id: yes
-    return:
-    - running: [ "@", run, running ]
-)
-
 $generic_map = %q(
 ---
 error:
@@ -55,9 +46,9 @@ class DatalackeyProcess
   def initialize(exe, directory, permissions, memory)
     args = [ exe,
         '--command-in', 'stdin', 'JSON', '--command-out', 'stdout', 'JSON' ]
-    args.push('--memory') if memory
-    args.concat([ '--directory', directory ]) if directory != nil
-    args.concat([ '--permissions', permissions ]) if not memory
+    args.push('--memory') unless memory.nil?
+    args.concat([ '--directory', directory ]) unless directory.nil?
+    args.concat([ '--permissions', permissions ]) unless permissions.nil?
     @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*args)
   end
 
@@ -70,7 +61,6 @@ end
 
 
 CategoryAction = Struct.new(:category, :action)
-CategoryActionMessage = Struct.new(:category, :action, :message)
 
 # Turn into obtaining at most three lists of mappings.
 
@@ -78,16 +68,19 @@ class PatternAction
   @@generic_map = YAML.load($generic_map)
 
   attr_reader :identifier
-  attr_accessor :exit, :command, :status
+  attr_accessor :exit, :command, :status, :generators
 
-  def initialize(action_maps_list, generic_action_map = nil,
-      identifier_placeholder = '@')
+  def initialize(action_maps_list, message_procs = [],
+      generic_action_map = nil, identifier_placeholder = '@')
+    raise ArgumentError.new('message_procs not an Array') unless
+      message_procs.is_a? Array
     @pattern2ca = { }
     @fixed2ca = { }
     @identifier = identifier_placeholder
     @exit = nil
     @command = nil
     @status = nil
+    @generators = message_procs
     maps = action_maps_list.clone
     maps.push(generic_action_map.nil? ? @@generic_map : generic_action_map)
     maps.each do |ca2p|
@@ -113,7 +106,12 @@ class PatternAction
   end
 
   def clone
-    return Marshal.load(Marshal.dump(self))
+    gens = @generators
+    @generators = nil
+    copy = Marshal.load(Marshal.dump(self))
+    @generators = gens
+    copy.generators = gens.clone
+    return copy
   end
 
   def replace_identifier(identifier, p2ca)
@@ -133,19 +131,27 @@ class PatternAction
   end
 
   def best_match(message_array)
-    return @fixed2ca[message_array] if @fixed2ca.has_key? message_array
+    return [ @fixed2ca[message_array], [] ] if @fixed2ca.has_key? message_array
     best_length = 0
     best = nil
+    best_vars = nil
     @pattern2ca.each_pair do |pattern, ca|
       next if message_array.length + 1 < pattern.length
       next if pattern.last != '*' and message_array.length != pattern.length
       length = 0
       exact_length = 0
       found = true
+      vars = []
       pattern.each_index do |idx|
-        break if pattern[idx] == '*'
-        next if pattern[idx] == '?'
-        length += 1
+        if pattern[idx] == '*'
+          vars.concat message_array[idx...message_array.length]
+          break
+        end
+        if pattern[idx] == '?'
+          vars.push message_array[idx]
+          length += 1
+          next
+        end
         found = pattern[idx] == message_array[idx]
         break unless found
         exact_length += 1
@@ -154,12 +160,14 @@ class PatternAction
       if best_length < exact_length
         best_length = exact_length
         best = ca
+        best_vars = vars
       elsif best_length < length
         best_length = length
         best = ca
+        best_vars = vars
       end
     end
-    return best
+    return best, best_vars
   end
 end
 
@@ -173,7 +181,7 @@ class DatalackeyIO
     @from_datalackey = from_datalackey
     @identifier = 0
     @tracked_mutex = Mutex.new
-    @tracked = { nil => PatternAction.new([], nil, nil) }
+    @tracked = { nil => PatternAction.new([], [], nil, nil) }
     @tracked.default = nil
     @waiting = nil
     @return_mutex = Mutex.new
@@ -205,25 +213,25 @@ class DatalackeyIO
           # See if we are interested in it.
           tracker = @tracked_mutex.synchronize { @tracked[msg[0]] }
           next if tracker.nil?
-          ca = tracker.best_match(msg)
+          ca, vars = tracker.best_match(msg)
           next if ca.nil?
           if msg[0].nil?
             ca.each do |item|
-              next unless item.category == 'internal'
+              next unless item.category == 'internal' or item.category == :internal
               case item.action
-              when 'stored'
+              when 'stored', :stored
                 @dataprocess_mutex.synchronize {
                   @data[msg[3]] = msg.last unless msg.last < @data[msg[3]]
                 }
-              when 'deleted'
+              when 'deleted', :deleted
                 @dataprocess_mutex.synchronize { @data.delete msg[3] }
-              when 'data-error'
+              when 'data_error', :data_error
                 @dataprocess_mutex.synchronize { @data.delete msg[3] }
-              when 'started'
+              when 'started', :started
                 @dataprocess_mutex.synchronize { @process[msg[3]] = msg.last }
-              when 'ended'
+              when 'ended', :ended
                 @dataprocess_mutex.synchronize { @process.delete msg[3] }
-              when 'error-format'
+              when 'error_format', :error_format
                 @to_datalackey_mutex.synchronize { @to_datalackey.putc 0 }
               end
             end
@@ -231,23 +239,28 @@ class DatalackeyIO
           # Generate needed messages.
           @message_mutex.synchronize {
             ca.each do |item|
-              next if item.category == 'internal'
-              @messages.push CategoryActionMessage.new(item.category, item.action, msg)
+              next if item.category == 'internal' or item.category == :internal
+              msgs = []
+              tracker.generators.each do |p|
+                msgs = p.call(item.category, item.action, msg, vars)
+                break unless msgs.empty?
+              end
+              @messages.concat(msgs)
             end
           }
           if msg[0] == @waiting and not @waiting.nil?
             finish = false
             ca.each do |item|
               case item.category
-              when 'error'
+              when 'error', :error
                 finish = true
-              when 'return'
+              when 'return', :return
                 finish = true
-              when 'internal'
+              when 'internal', :internal
                 case item.action
-                when 'done'
+                when 'done', :done
                   @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
-                when 'version'
+                when 'version', :version
                   @syntax = msg[3]['commands']
                   @version = { :datalackey => msg[3]['datalackey'],
                     :interface => msg[3]['interface'] }
@@ -298,7 +311,6 @@ class DatalackeyIO
   end
 
   def send(pattern_action, command, user_id = false, echo_target = nil)
-    tracker = pattern_action.clone
     return nil if @to_datalackey_mutex.synchronize { @to_datalackey.closed? }
     if user_id
       id = command[0]
@@ -307,6 +319,7 @@ class DatalackeyIO
       @identifier += 1
       command.prepend id
     end
+    tracker = pattern_action.clone
     tracker.set_identifier(id)
     tracker.command = JSON.generate(command)
     @tracked_mutex.synchronize {

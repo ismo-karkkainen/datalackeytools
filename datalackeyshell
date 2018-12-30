@@ -20,6 +20,8 @@ require 'io/console'
 $version = 1
 history_file_basename = '.datalackeyshell.history'
 history_file_max_lines = 2000
+$echo_lackey_output = false
+$command_echo = false
 
 # Argument handling and checking
 
@@ -28,7 +30,7 @@ class Arguments
 
   def initialize
     @directory = nil
-    @memory = false
+    @memory = nil
     @lackey = nil
     @permissions = nil
   end
@@ -41,34 +43,49 @@ class Arguments
       opts.on("-m", "--memory", "Store data in memory.") do
         @memory = true
       end
-      opts.on("-d", "--directory [DIR]", "Store data under (working) directory.") do |d|
+      opts.on("-d", "--directory [DIR]",
+          "Store data under (working) directory.") do |d|
         @directory = d || ''
       end
       opts.on_tail("-h", "--help", "Print this help and exit.") do
         puts opts
         exit 0
       end
-      opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
+      opts.on("-l", "--lackey PROGRAM",
+          "Use specified datalackey executable.") do |e|
         @lackey = e
       end
-      opts.on("-p", "--permissions MODE", [:user, :group, :other], "Use permissions extended to (user, group, other) for files.") do |p|
+      opts.on("-p", "--permissions MODE", [:user, :group, :other],
+          "Use permissions extended to (user, group, other) for files.") do |p|
         @permissions = { :user => "600", :group => "660", :other => "666" }[p]
+      end
+      opts.on('-e', '--echo', 'Turn datalackey command and reply encho on.') do
+        $echo_lackey_output = true
+        $command_echo = true
       end
     end
     parser.parse!(args)
     # Perform sanity checks on the values.
-    if @memory and not (@directory.nil? and @permissions.nil?)
+    if not @memory.nil? and not (@directory.nil? and @permissions.nil?)
       STDERR.puts "Cannot use both --memory and --directory or --permissions."
       exit 1
     end
-    if not @memory
+    if @memory.nil?
       if @directory.nil?
         @directory = Dir.pwd
       elsif not Dir.exist? @directory
         STDERR.puts "Given directory does not exist: #{@directory}"
         exit 1
       end
-      @permissions = "600" if @permissions.nil?
+      if permissions.nil?
+        if (File.umask & 077) == 0
+          @permissions = '666'
+        elsif (File.umask & 070) == 0
+          @permissions = '660'
+        else
+          @permissions = "600"
+        end
+      end
     end
   end
 end
@@ -77,21 +94,21 @@ arguments = Arguments.new
 arguments.parse(ARGV)
 
 exe = arguments.lackey
-if exe == nil
+if exe.nil?
   dirs = [ '/usr/local/libexec', '/usr/libexec' ]
   dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
-  for k in 0 ... dirs.length
-    exe = File.join(dirs[k], "datalackey")
+  dirs.each do |d|
+    exe = File.join(d, "datalackey")
     break if File.exist?(exe) and File.executable?(exe)
     exe = nil
   end
-  puts("datalackey not found.") if exe == nil
+  puts("datalackey not found.") if exe.nil?
 else
   if not File.exist?(exe) or not File.executable?(exe)
     STDERR.puts "Not found or not an executable: #{exe}"
   end
 end
-exit(1) if exe == nil
+exit(1) if exe.nil?
 
 # datalackey process
 
@@ -105,21 +122,19 @@ $lackey_io = DatalackeyIO.new($lackey.stdin, $lackey.stdout)
 
 def indent_puts(long)
   rows, cols = IO.console.winsize
-  if long.length < cols
+  if long.length < cols or long.include? '\n'
     puts long
     return
   end
   pieces = long.split
   line = pieces.first
-  k = 1
-  while k < pieces.length
+  for k in 1 ... pieces.length
     if line.length + 1 + pieces[k].length <= cols
       line << ' ' << pieces[k]
-    else
-      puts line
-      line = '  ' + pieces[k]
+      next
     end
-    k += 1
+    puts line
+    line = '  ' + pieces[k]
   end
   puts line
 end
@@ -138,11 +153,34 @@ def prompt_print(message)
   reprompt
 end
 
-class OutputPresenter
-  attr_accessor :echo
+$default_message_proc = Proc.new do |category, action, message, vars|
+  out = []
+  out.push(message.to_s) if $echo_lackey_output
+  case category
+  when :error, 'error'
+    out.push "ERROR #{action} : #{message.join(' ')}"
+  when :data, 'data'
+    out.push "#{action} : #{vars.first}"
+  when :process, 'process'
+    case action
+    when :ended, 'ended'
+    else
+      out.push "#{action} : #{vars.first}"
+    end
+  when :return, 'return'
+    case action
+    when :done, 'done'
+    else
+      out.push("#{action} : #{vars.join(' ')}") unless vars.empty?
+    end
+  else
+    out.push "#{category} / #{action} : #{vars.join(' ')}"
+  end
+  out
+end
 
-  def initialize(initial_echo = false)
-    @echo = initial_echo
+class OutputPresenter
+  def initialize
     @present_output = Thread.new do
       until $lackey_io.closed?
         msgs = $lackey_io.get_messages
@@ -151,10 +189,7 @@ class OutputPresenter
           next
         end
         puts
-        msgs.each do |out|
-          puts(out.message) if @echo
-          puts "#{out.category} / #{out.action} : #{out.message.join(' ')}"
-        end
+        msgs.each { |msg| puts msg }
         reprompt
       end
     end
@@ -170,28 +205,40 @@ $presenter = OutputPresenter.new
 
 $handler = Hash.new(nil)
 $exiting = false
-$command_echo = false
 
 class Handler
 
+  def syntax_array_requirements(arr)
+    return [ arr, arr.length, false ] unless arr.first.is_a? Integer
+    alternatives = false
+    required = arr.first
+    arr = arr[1...arr.length]
+    if required < 0
+      required = arr.length
+      alternatives = true
+    end
+    return arr, required, alternatives
+  end
+
   def construct_usages(result, value, seen = [])
     if value.is_a? Array
+      value, required, alternatives = syntax_array_requirements(value)
       prev = nil
-      result.push('[') if value.include?(nil)
-      value.each do |alt|
-        next if alt.nil?
-        if prev.is_a? String
+      value.each_index do |k|
+        alt = value[k]
+        if alternatives and 0 < k
+          result.push(prev.is_a?(Array) ? ' || ' : '|')
+        elsif prev.is_a? String
           result.push ' '
         elsif prev.is_a? Symbol
           result.push(' ') unless result.last == '[' or result.last == '|'
-        elsif prev.is_a? Array
-          result.push '|'
         end
+        result.push('[') if 0 < required and k == required
         prev = alt
         construct_usages(result, alt, seen)
       end
       result.pop() if result.last == '|'
-      result.push(']') if value.include?(nil)
+      result.push(']') if 0 < required and required < value.length
       return result
     end
     if seen.include? value
@@ -211,12 +258,12 @@ class Handler
   def usages
     top = @syntax[:root]
     return { :root => [ top ] } if top.is_a? String # Parameterless command.
-    raise ArgumentError.new('Not String or Array.') unless top.is_a? Array
     results = { }
-    if top.first.is_a? String # Command with parameters.
+    if top.first.is_a? Integer and top[1].is_a? String or top.first.is_a? String
       results[:root] = construct_usages([], :root)
     else # Command with variations. Expect array of arrays of symbol(s).
-      top.each { |sym| results[sym.first] = construct_usages([], sym) }
+      top = top[1...top.length] if top.first.is_a? Integer
+      top.each { |sym| results[sym] = construct_usages([], sym) }
     end
     return results
   end
@@ -233,7 +280,6 @@ class Handler
 
   def completion_search(suggestions, parts, part_idx, key, item)
     return true if part_idx >= parts.length
-    return false if item.nil?
     last = part_idx + 1 == parts.length
     if item.is_a? Symbol # These either validate part or add suggestions.
       cands = nil
@@ -248,7 +294,7 @@ class Handler
         cands = [] # Run command identifiers from history.
         scan_history([ Regexp.new('^run[[:blank:]]+') ]).each do |h|
           pieces = h.shellsplit
-          cands.push(pieces[1]) if pieces.length >= 2
+          cands.push(pieces[1]) if 1 < pieces.length
         end
       when :executable
         return File.executable?(parts[part_idx]) unless last
@@ -264,17 +310,15 @@ class Handler
         end
       when :null
         # Requires that :null is before :string in allowed values.
-        return $handler['null'].null == parts[part_idx] unless last
-        cands = [ $handler['null'].null ]
+        return $null_handler.null == parts[part_idx] unless last
+        cands = [ $null_handler.null ]
       when :varname
-        return parts[part_idx].include?('=') unless last
+        return not(parts[part_idx].include?('=')) unless last
         cands = []
       else
         return completion_search(suggestions, parts, part_idx, item, @syntax[item])
       end
       return false if cands.nil?
-      # There is a slight chance that something changes while user is typing.
-      # Hence this may pass at some point and then fail.
       return cands.include?(parts[part_idx]) unless last
       suggestions.concat cands
       return true
@@ -283,11 +327,14 @@ class Handler
       suggestions.push item
       return true
     elsif item.is_a? Array
+      item, required, ored = syntax_array_requirements(item)
       ok = true
-      item.each do |sub|
-        ok = completion_search(suggestions, parts, part_idx, key, sub)
-        break unless ok
-        part_idx = part_idx + 1 unless sub.is_a? Array
+      item.each_index do |k|
+        sub = item[k]
+        res = completion_search(suggestions, parts, part_idx, key, sub)
+        ok = (ored ? (ok or res) : (required <= k ? ok : res))
+        break unless ok or ored
+        part_idx = part_idx + 1 unless ored
       end
       return ok
     end
@@ -301,9 +348,127 @@ class Handler
     return suggestions.grep(/^#{Regexp.escape(str)}/).sort.uniq
   end
 
+  def pop_false(match, condition)
+    match.pop() unless condition
+    return condition
+  end
+
+  def verify_search(match, parts, key, item)
+    print match, parts, key, item
+    puts
+    return nil if match.length == parts.length
+    part = parts[match.length]
+    last = match.length + 1 == parts.length
+    if item.is_a? Symbol # These either validate part or add suggestions.
+      match.push item
+      case item
+      when :command
+        return pop_false(match, $handler.has_key?(part))
+      when :label
+        return pop_false(match, $lackey_io.data.has_key?(part))
+      when :process_id
+        return pop_false(match, $lackey_io.process.has_key?(part))
+      when :history_process_id
+        scan_history([ Regexp.new('^run[[:blank:]]+') ]).each do |h|
+          pieces = h.shellsplit
+          return true if pieces.length >= 2 and pieces[1] == part
+        end
+        return pop_false(match, false)
+      when :executable
+        return pop_false(match, File.executable?(part))
+      when :string
+        return true # Anything goes.
+      when :int
+        begin
+          Integer(part)
+          return true # Any integer is fine.
+        rescue ArgumentError
+          return pop_false(match, false)
+        end
+      when :null
+        nv = $null_handler.null
+        return pop_false(match, nv == part)
+      when :varname
+        return pop_false(match, not(part.include?('=')))
+      end
+      match.pop
+      return verify_search(match, parts, item, @syntax[item])
+    elsif item.is_a? String
+      match.push item
+      return pop_false(match, item == part)
+    elsif item.is_a? Array
+      item, required, alternatives = syntax_array_requirements(item)
+      required = 1 if alternatives
+      return false if parts.length < match.length + required
+      orig_count = match.length
+      item.each_index do |k|
+        sub = item[k]
+        ok = verify_search(match, parts, key, sub)
+        return nil if ok.nil?
+        if alternatives
+          return true if ok # One match is enough.
+          next
+        elsif not ok
+          if k < required # Looking for required consecutive matches.
+            match.pop(match.length - orig_count)
+            return false
+          elsif required == 0
+            return false # Optional repeating element not matched. Don't recurse.
+          end
+        end
+      end
+      return true unless alternatives
+      match.pop(match.length - orig_count)
+      return false
+    end
+    raise ArgumentError.new('Item other than nil, Symbol, String or Array.')
+  end
+
   def verify(parts)
-    # Do like completion_search but require exact matches.
+    top = @syntax[:root]
+    return (parts.length == 1 and parts[0] == top) if top.is_a? String
+    match = []
+    return false unless verify_search(match, parts, :root, top).nil?
+    # Convert according to match information as needed.
+    parts.each_index do |k|
+      case match[k]
+      when :null
+        parts[k] = nil
+      when :int
+        parts[k] = Integer(parts[k])
+      end
+    end
     return true
+  end
+
+  def register_search
+    # Currently it holds that the strings are at top level first or second
+    # level first items.
+    top = @syntax[:root]
+    return [ top ] if top.is_a? String
+    raise ArgumentError.new('Not String or Array.') unless top.is_a? Array
+    items, required, search_children = syntax_array_requirements(top)
+    return [ items.first ] unless search_children
+    cmds = []
+    items.each do |item|
+      sub = @syntax[item]
+      if sub.is_a? String
+        cmds.push sub
+        next
+      end
+      sub, required, wrong_assumption = syntax_array_requirements(sub)
+      raise ArgumentError.new('Alternatives at level 2') if wrong_assumption
+      raise ArgumentError.new('Symbol at level 2') unless sub.first.is_a? String
+      cmds.push sub.first
+    end
+    return cmds.uniq
+  end
+
+  def register
+    register_search.each do |cmd|
+      raise KeyError.new("Command in handlers: #{cmd}") if $handler.has_key? cmd
+      $handler[cmd] = self
+    end
   end
 
   def send(patt_act, message, user_id = false)
@@ -328,10 +493,11 @@ end
 class HelpHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'help', :cmds ],
-      :cmds => [ [ :command, :cmds ], nil ],
+      :root => [ 1, 'help', :cmds ],
+      :cmds => [ 0, :command, :cmds ],
       :help => { :root => "Print command help." }
     }
+    register
   end
 
   def handle(parts)
@@ -349,34 +515,34 @@ class HelpHandler < Handler
     end
   end
 end
-$handler['help'] = HelpHandler.new
-$handler['usage'] = $handler['help']
+#$handler['help'] = HelpHandler.new
+HelpHandler.new
 
 class ExitHandler < Handler
   attr_reader :code
 
   def initialize
     @syntax = {
-      :root => [ 'exit', :param ],
-      :param => [ [ :int ], nil ],
+      :root => [ 1, 'exit', :int ],
       :help => { :root => "Waits for datalackey to finish, exits with code." }
     }
     @code = 0
+    register
   end
 
   def handle(parts)
     $exiting = true
-    @code = Integer(parts[1]) if parts.length == 2
+    @code = parts[1] if parts.length == 2
   end
 end
-$handler['exit'] = ExitHandler.new
+$exit_handler = ExitHandler.new
 
 class NullHandler < Handler
   attr_reader :null
 
   def initialize
     @syntax = {
-      :root => [ [ :nullcmd ], [ :nullcmdwhat ] ],
+      :root => [ -1, :nullcmd, :nullcmdwhat ],
       :nullcmd => [ 'null', :string ],
       :nullcmdwhat => 'null?',
       :help => {
@@ -385,6 +551,7 @@ class NullHandler < Handler
       }
     }
     @null = 'null'
+    register
   end
 
   def handle(parts)
@@ -395,21 +562,21 @@ class NullHandler < Handler
     end
   end
 end
-$handler['null'] = NullHandler.new
-$handler['null?'] = $handler['null']
+$null_handler = NullHandler.new
 
 class ListHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'ls', :regexps ],
-      :regexps => [ [ :string, :regexps ], nil ],
+      :root => [ 1, 'ls', :regexps ],
+      :regexps => [ 0, :string, :regexps ],
       :help => { :root => "Prints out the list of data labels that match optional regular expressions." }
     }
+    register
   end
 
   def handle(parts)
-    exps = []
     clean = parts[1...parts.length].sort.uniq
+    exps = []
     clean.each { |e| exps.push Regexp.new(e) }
     $lackey_io.data.keys.sort.each do |label|
       match = exps.length == 0
@@ -421,7 +588,7 @@ class ListHandler < Handler
     end
   end
 end
-$handler['ls'] = ListHandler.new
+ListHandler.new
 
 class SetHandler < Handler
   def initialize
@@ -429,6 +596,7 @@ class SetHandler < Handler
       :root => [ 'set', :string, :string ],
       :help => { :root => "Sets label to JSON-encoded value (in single quotes as needed)." }
     }
+    register
   end
 
   def handle(parts)
@@ -436,69 +604,72 @@ class SetHandler < Handler
     dump "{\"#{parts[1]}\":#{v}}"
   end
 end
-$handler['set'] = SetHandler.new
+SetHandler.new
 
 class GetHandler < Handler
   def initialize
     @syntax = {
       :root => [ 'get', :label, :labels ],
-      :labels => [ [ :label, :labels ], nil ],
+      :labels => [ 0, :label, :labels ],
       :help => { :root => "Gets labels." }
     }
+    pretty_print = Proc.new do |category, action, message, vars|
+      out = []
+      out.push(message.to_s) if $echo_lackey_output
+      out.push JSON.pretty_generate(message.last) if category == :return
+      out
+    end
     @actions = PatternAction.new([{
       :return => [ { :get => [ '@', 'get', '', '?' ] } ],
       :error => [ { :get_fail => [ '@', 'get', 'failed', '*' ] } ]
-    }])
+    }], [ pretty_print, $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'get' ].concat(parts[1...parts.length]))
   end
-
-  def present_other(parsed, json)
-    return if parsed[2] != ''
-    head = "[#{parsed[0]},\"#{parsed[1]}\",\"\","
-    prompt_print json[head.length...json.length - 1]
-  end
 end
-$handler['get'] = GetHandler.new
+GetHandler.new
 
 class RenameHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'mv', :label_pair, :label_pairs ],
-      :label_pairs => [ [ :label_pair, :label_pairs ], nil ],
+      :root => [ 2, 'mv', :label_pair, :label_pairs ],
+      :label_pairs => [ 0, :label_pair, :label_pairs ],
       :label_pair => [ :label, :string ],
       :help => { :root => "Re-labels values. Takes label and new name pairs." }
     }
     @actions = PatternAction.new([{
-      :notify => [ { :missing => [ '@', 'rename', 'missing', '*' ] } ]
-    }])
+      :note => [ { :missing => [ '@', 'rename', 'missing', '*' ] } ]
+    }], [ $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'rename' ].concat(parts[1...parts.length]))
   end
 end
-$handler['mv'] = RenameHandler.new
+RenameHandler.new
 
 class DeleteHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'rm', :label, :labels ],
-      :labels => [ [ :label, :labels ], nil ],
+      :root => [ 2, 'rm', :label, :labels ],
+      :labels => [ 0, :label, :labels ],
       :help => { :root => "Removes labels from storage." }
     }
     @actions = PatternAction.new([{
-      :notify => [ { :missing => [ '@', 'delete', 'missing', '*' ] } ]
-    }])
+      :note => [ { :missing => [ '@', 'delete', 'missing', '*' ] } ]
+    }], [ $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'delete' ].concat(parts[1...parts.length]))
   end
 end
-$handler['rm'] = DeleteHandler.new
+DeleteHandler.new
 
 class StorageInfoHandler < Handler
   def initialize
@@ -506,32 +677,31 @@ class StorageInfoHandler < Handler
       :root => 'info',
       :help => { :root => "Print information about storage." }
     }
+    present = Proc.new do |category, action, message, vars|
+      out = []
+      message.last.keys.sort.each do |label|
+        info = message.last[label]
+        description = "#{label} : "
+        sep = ''
+        info.keys.sort.each do |format|
+          description.concat "#{sep}#{format}: #{info[format]}"
+          sep = ', '
+        end
+        out.push description
+      end
+      out
+    end
     @actions = PatternAction.new([{
       :return => [ { 'storage-info' => [ '@', 'storage-info', '', '?' ] } ]
-    }])
+    }], [ present, $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'storage-info' ])
   end
-
-  def present_other(parsed, json)
-    return if parsed[2] != '' or parsed.length != 4
-    puts
-    parsed[3].keys.sort.each do |label|
-      info = parsed[3][label]
-      description = "#{label} : "
-      sep = ''
-      info.keys.sort.each do |format|
-        description.concat "#{sep}#{format}: #{info[format]}"
-        sep = ', '
-      end
-      puts description
-    end
-    reprompt
-  end
 end
-$handler['info'] = StorageInfoHandler.new
+StorageInfoHandler.new
 
 class PingHandler < Handler
   def initialize
@@ -539,18 +709,22 @@ class PingHandler < Handler
       :root => 'ping',
       :help => { :root => "Check that datalackey responds." }
     }
-    @actions = PatternAction.new([])
+    @actions = PatternAction.new([{
+      :return => [ { :done => [ '@', 'no-op', '' ] } ]
+    }], [ $default_message_proc ])
+    register
   end
 
   def handle(parts)
-    send(@actions, [ 'no-op' ])
-  end
-
-  def present_other(parsed, json)
-    prompt_print "Datalackey responded."
+    tracker = send(@actions, [ 'no-op' ])
+    if tracker.nil?
+      puts("No connection to datalackey.")
+      return
+    end
+    puts(tracker.status ? "Datalackey responded." : "Error occurred.")
   end
 end
-$handler['ping'] = PingHandler.new
+PingHandler.new
 
 class VersionHandler < Handler
   def initialize
@@ -558,73 +732,45 @@ class VersionHandler < Handler
       :root => 'version',
       :help => { :root => "Print version information." }
     }
+    register
   end
 
   def handle(parts)
     description = "shell: #{$version}"
     v = $lackey_io.version
     v.keys.sort.each { |key| description.concat "\n#{key}: #{v[key]}" }
-    prompt_print description
+    puts description
   end
 end
-$handler['version'] = VersionHandler.new
+VersionHandler.new
 
 class EchoHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :lackey ], [ :lackeywhat ] ],
+      :root => [ -1, :lackey, :lackeywhat ],
       :lackey => [ 'lackey', :inout, :onoff ],
       :lackeywhat => 'lackey?',
-      :inout => [ [ 'command' ], [ 'reply' ] ],
-      :onoff => [ [ 'on' ], [ 'off' ] ],
+      :inout => [ -1, 'command', 'reply' ],
+      :onoff => [ -1, 'on', 'off' ],
       :help => {
-        :lackey => "Set the printing of datalackey commands/replies on/off.",
-        :lackeywhat => "Print datalakcey command/reply printing status."
+        :lackey => "Set the printing of communication with datalackey on or off.",
+        :lackeywhat => "Print datalackey command/reply printing status."
       }
     }
+    register
   end
 
   def handle(parts)
     if parts.length > 1
       $command_echo = parts[2] == 'on' if parts[1] == 'command'
-      $presenter.echo = parts[2] == 'on' if parts[1] == 'reply'
+      $echo_lackey_output = parts[2] == 'on' if parts[1] == 'reply'
     else
       puts "command: #{$command_echo ? 'on' : 'off'}"
-      puts "reply  : #{$presenter.echo ? 'on' : 'off'}"
+      puts "reply  : #{$echo_lackey_output ? 'on' : 'off'}"
     end
   end
 end
-$handler['lackey'] = EchoHandler.new
-
-class NotifyHandler < Handler
-  def initialize
-    @syntax = {
-      :root => [ [ :notify ], [ :notifywhat ] ],
-      :notify => [ 'notify', :procdata, :onoff ],
-      :notifywhat => 'notify?',
-      :procdata => [ [ 'data' ], [ 'process' ] ],
-      :onoff => [ [ 'on' ], [ 'off' ] ],
-      :help => {
-        :notify => "Turn process or data notifications on or off.",
-        :notifywhat => "Print data/process notification status."
-      }
-    }
-    @notify = { 'process' => 'off', 'data' => 'on' }
-  end
-
-  def handle(parts)
-    if parts.length > 1
-      @notify[parts[1]] = parts[2]
-    else
-      @notify.keys.sort.each { |key| puts "#{key} : #{@notify[key]}" }
-    end
-  end
-
-  def present(parsed, json)
-    prompt_print "#{parsed[1].capitalize} #{parsed[2]} : #{parsed[3]}"
-  end
-end
-$handler['notify'] = NotifyHandler.new
+EchoHandler.new
 
 def scan_history(regexps)
   matched = Array.new
@@ -642,10 +788,11 @@ end
 class HistoryHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'history', :regexps ],
-      :regexps => [ [ :string, :regexps ], nil ],
+      :root => [ 1, 'history', :regexps ],
+      :regexps => [ 0, :string, :regexps ],
       :help => { :root => "Print commands that match any regex, or all." }
     }
+    register
   end
 
   def handle(parts)
@@ -654,7 +801,7 @@ class HistoryHandler < Handler
     scan_history(exps).each { |h| puts h }
   end
 end
-$handler['history'] = HistoryHandler.new
+HistoryHandler.new
 
 class RecallHandler < Handler
   def initialize
@@ -662,6 +809,7 @@ class RecallHandler < Handler
       :root => [ 'recall', :history_process_id ],
       :help => { :root => "Fetch last \"run identifier\" related settings from history. Finds the input, output, env, arg, and channel settings that were in effect when last run with given identifier was done. If no identifier is given, last run command identifier is used. Prints the lines found from history." }
     }
+    register
   end
 
   def scan_until_first(new_to_old, exps)
@@ -713,28 +861,64 @@ class RecallHandler < Handler
     print_until_first(session, [ '^output[[:blank:]]', '^output[+][[:blank:]]', '^output-naming[[:blank:]]' ])
   end
 end
-$handler['recall'] = RecallHandler.new
+RecallHandler.new
 
 # Run command handlers
+
+class NotifyHandler < Handler
+  def initialize
+    @syntax = {
+      :root => [ -1, :notify, :notifywhat ],
+      :notify => [ 'notify', :procdata, :onoff ],
+      :notifywhat => 'notify?',
+      :procdata => [ -1, 'data', 'process' ],
+      :onoff => [ -1, 'on', 'off' ],
+      :help => {
+        :notify => "Turn process or data notifications on or off.",
+        :notifywhat => "Print data/process notification status."
+      }
+    }
+    @notify = { 'process' => 'off', 'data' => 'on' }
+    register
+  end
+
+  def handle(parts)
+    if parts.length > 1
+      @notify[parts[1]] = parts[2]
+    else
+      @notify.keys.sort.each { |key| puts "#{key} : #{@notify[key]}" }
+    end
+  end
+
+  def command_part
+    command = []
+    @notify.each_pair do |key, value|
+      command.concat(['notify', key]) if value == 'on'
+    end
+    return command
+  end
+end
+$notify_handler = NotifyHandler.new
 
 class InputHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :input ], [ :inputadd ], [ :inputwhat ] ],
-      :input => [ 'input', :args ],
-      :inputadd => [ 'input+', :a2b, :args ],
+      :root => [ -1, :input, :inputadd, :inputwhat ],
+      :input => [ 1, 'input', :args ],
+      :inputadd => [ 2, 'input+', :a2b, :args ],
       :inputwhat => 'input?',
-      :args => [ [ :a2b, :args ], nil ],
-      :a2b => [ [ :string, ':', :label ], [ :string, '=', :value ] ],
-      :value => [ [ :null ], [ :int ], [ :string ] ],
+      :args => [ 0, :a2b, :args ],
+      :a2b => [ -1, [ :string, ':', :label ], [ :string, '=', :value ] ],
+      :value => [ -1, :null, :int, :string ],
       :help => {
-        :input => "Clears input mapping and passes label as name, or value of name as given directly. Allowed values are integers and strings. Quote '\"string value\"'.",
+        :input => "Clears input mapping and passes label as name, or value of name as given directly.",
         :inputadd => "Adds to current input mapping.",
         :inputwhat => "Prints current input mapping."
       }
     }
     @order = []
     @mapping = { }
+    register
   end
 
   def handle(parts)
@@ -759,14 +943,6 @@ class InputHandler < Handler
         puts "Error: #{name} already in mapping."
         return
       end
-      if direct
-        begin
-          check = JSON.load(src)
-        rescue JSON::ParserError
-          puts "Error: #{name} value is invalid: #{src}"
-          return
-        end
-      end
       order_in.push name
       map_in[name] = [direct, src]
     end
@@ -787,20 +963,18 @@ class InputHandler < Handler
     return command
   end
 end
-$handler['input'] = InputHandler.new
-$handler['input+'] = $handler['input']
-$handler['input?'] = $handler['input']
+$input_handler = InputHandler.new
 
 class OutputHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :output ], [ :outputadd ], [ :outputwhat ], [ :outputnaming ] ],
-      :output => [ 'output', :maps ],
-      :outputadd => [ 'output+', :map, :maps ],
+      :root => [ -1, :output, :outputadd, :outputwhat, :outputnaming ],
+      :output => [ 1, 'output', :maps ],
+      :outputadd => [ 2, 'output+', :map, :maps ],
       :outputwhat => 'output?',
       :outputnaming => [ 'output-naming', :string, :string ],
-      :maps => [ [ :map, :maps ], nil ],
-      :map => [ [ :string, :string ], [ :string, :null ] ],
+      :maps => [ 0, :map, :maps ],
+      :map => [ -1, [ :string, :string ], [ :string, :null ] ],
       :help => {
         :output => "Clears output mapping and maps name to label. Using null as label discards that name.",
         :outputadd => "Adds to current output mapping.",
@@ -811,6 +985,7 @@ class OutputHandler < Handler
     @mapping = Hash.new
     @prefix = nil
     @postfix = nil
+    register
   end
 
   def handle(parts)
@@ -853,22 +1028,18 @@ class OutputHandler < Handler
     return command
   end
 end
-$handler['output'] = OutputHandler.new
-$handler['output+'] = $handler['output']
-$handler['output-naming'] = $handler['output']
-$handler['output?'] = $handler['output']
+$output_handler = OutputHandler.new
 
 class EnvHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :env ], [ :envadd ], [ :envwhat ], [ :envclear ] ],
-      :env => [ 'env', :varvalues ],
-      :envadd => [ 'env+', :varval, :varvalues ],
+      :root => [ -1, :env, :envadd, :envwhat, :envclear ],
+      :env => [ 1, 'env', :varvalues ],
+      :envadd => [ 2, 'env+', :varval, :varvalues ],
       :envwhat => 'env?',
       :envclear => 'env-clear',
-      :varvalues => [ [ :varval, :varvalues ], nil ],
-      :varval => [ :varname, :value ],
-      :value => [ [ :int ], [ :string ] ],
+      :varvalues => [ 0, :varval, :varvalues ],
+      :varval => [ :varname, :string ],
       :help => {
         :env => "Clears environment variable mapping and sets var to value.",
         :envadd => "Sets var to value in environment variable mapping.",
@@ -878,6 +1049,7 @@ class EnvHandler < Handler
     }
     @mapping = { }
     @clear = false
+    register
   end
 
   def handle(parts)
@@ -914,27 +1086,24 @@ class EnvHandler < Handler
     return command
   end
 end
-$handler['env'] = EnvHandler.new
-$handler['env+'] = $handler['env']
-$handler['env-clear'] = $handler['env']
-$handler['env?'] = $handler['env']
+$env_handler = EnvHandler.new
 
 class ArgHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :arg ], [ :argadd ], [ :argwhat ] ],
-      :arg => [ 'arg', :values ],
-      :argadd => [ 'arg+', :value, :values ],
+      :root => [ -1, :arg, :argadd, :argwhat ],
+      :arg => [ 1, 'arg', :values ],
+      :argadd => [ 2, 'arg+', :string, :values ],
       :argwhat => 'arg?',
-      :values => [ [ :value, :values ], nil ],
-      :value => [ [ :int ], [ :string ] ],
+      :values => [ 0, :string, :values ],
       :help => {
         :arg => "Clear argument list first and add to argument list.",
         :argadd => "Add to argument list.",
         :argwhat => "Print current program argument list."
       }
     }
-    @args = Array.new
+    @args = []
+    register
   end
 
   def handle(parts)
@@ -952,20 +1121,18 @@ class ArgHandler < Handler
     return @args.clone
   end
 end
-$handler['arg'] = ArgHandler.new
-$handler['arg+'] = $handler['arg']
-$handler['arg?'] = $handler['arg']
+$arg_handler = ArgHandler.new
 
 class ChannelHandler < Handler
   def initialize
     @syntax = {
-      :root => [ [ :channelin ], [ :channelout ], [ :channelwhat ] ],
+      :root => [ -1, :channelin, :channelout, :channelwhat ],
       :channelin => [ 'channel', 'in', :informat ],
       :channelout => [ 'channel', :outchannel, :outformat ],
       :channelwhat => 'channel?',
-      :informat => [ [ 'json' ], [ 'none' ] ],
-      :outchannel => [ [ 'out' ], [ 'err' ] ],
-      :outformat => [ [ 'json' ], [ 'bytes' ], [ 'none' ] ],
+      :informat => [ -1, 'json', 'none' ],
+      :outchannel => [ -1, 'out', 'err' ],
+      :outformat => [ -1, 'json', 'bytes', 'none' ],
       :help => {
         :channelin => "Set program stdin format to JSON for data etc. input or closed if none.",
         :channelout => "Set program stdout/stderr format. Bytes is passed on as JSON array and none means to ignore any output.",
@@ -973,6 +1140,7 @@ class ChannelHandler < Handler
       }
     }
     @channels = { 'in' => 'json', 'out' => 'json', 'err' => 'bytes' }
+    register
   end
 
   def handle(parts)
@@ -996,8 +1164,7 @@ class ChannelHandler < Handler
     return command
   end
 end
-$handler['channel'] = ChannelHandler.new
-$handler['channel?'] = $handler['channel']
+$channel_handler = ChannelHandler.new
 
 $actions_run_common = %q(
 ---
@@ -1024,7 +1191,7 @@ error:
 - run-internal: [ "@", run, error, no-processes ]
 - run-internal: [ "@", run, error, no-thread ]
 - run-internal: [ "@", run, error, pipe ]
-notify:
+note:
 - run-error-input-failed: [ "@", run, error, input, failed ]
 - run-child-error-output-format: [ "@", run, error, format ]
 - run-child-error-output-format: [ "@", error, format ]
@@ -1033,53 +1200,43 @@ notify:
 - run-stop: [ "@", run, stopped, "?" ]
 - run-continue: [ "@", run, continued ]
 - run-closed: [ "@", run, input, closed ]
+bytes:
+- bytes: [ "@", run, bytes, "?", "*" ]
 )
 
 class RunHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'run', :identifier, :executable, :close ],
-      :identifier => [ [ :null ], [ :int ], [ :string ] ],
-      :close => [ [ 'close' ], nil ],
+      :root => [ 3, 'run', :identifier, :executable, 'close' ],
+      :identifier => [ -1, :null, :int, :string ],
       :help => { :root => "Runs executable as identifier. If close is given, the input is closed after current input has been passed on. Uses current input, output, channel, env, and arg settings." }
     }
-    @actions = PatternAction.new([ YAML.load($actions_run_common) ])
+    print_bytes = Proc.new do |category, action, message, vars|
+      out = []
+      out.push(''.concat(*message[3...message.length])) if 3 < message.length
+      out
+    end
+    @actions = PatternAction.new([ YAML.load($actions_run_common) ],
+      [ print_bytes, $default_message_proc ])
+    register
   end
 
   def handle(parts)
     id = parts[1]
     exe = parts[2]
     command = [ 'run' ]
-    c = $handler['input'].command_part
-    command.concat(c) unless c.empty?
-    c = $handler['output'].command_part
-    command.concat(c) unless c.empty?
-    c = $handler['channel'].command_part
-    command.concat(c) unless c.empty?
+    command.concat $notify_handler.command_part
+    command.concat $input_handler.command_part
+    command.concat $output_handler.command_part
+    command.concat $channel_handler.command_part
     command.push('end-feed') if parts.length == 4
-    c = $handler['env'].command_part
-    command.concat(c) unless c.empty?
+    command.concat $env_handler.command_part
     command.concat [ 'program', exe ]
-    c = $handler['arg'].command_part
-    command.concat(c) unless c.empty?
+    command.concat $arg_handler.command_part
     send(@actions, command, true)
   end
-
-  def present_other(parsed, json)
-    if parsed[2] == 'bytes'
-      # Turn into string using the number values and print.
-      msg = ''
-      parsed[3...parsed.length].each do |v|
-        msg.concat v.chr
-      end
-      prompt_print "#{parsed[0]} bytes output:\n#{msg}"
-    else
-      msg = parsed[2...parsed.length].join(' ')
-      prompt_print "#{parsed[0]} : #{msg}"
-    end
-  end
 end
-$handler['run'] = RunHandler.new
+RunHandler.new
 
 class PsHandler < Handler
   def initialize
@@ -1087,6 +1244,7 @@ class PsHandler < Handler
       :root => 'ps',
       :help => { :root => "List running proceses." }
     }
+    register
   end
 
   def handle(parts)
@@ -1098,25 +1256,26 @@ class PsHandler < Handler
     puts report
   end
 end
-$handler['ps'] = PsHandler.new
+PsHandler.new
 
 class KillHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'kill', :process_id, :identifiers ],
-      :identifiers => [ [ :process_id, :identifiers ], nil ],
+      :root => [ 2, 'kill', :process_id, :identifiers ],
+      :identifiers => [ 0, :process_id, :identifiers ],
       :help => { :root => "Terminates processes." }
     }
     @actions = PatternAction.new([{
-      :notify => [ { :missing => [ '@', 'terminate', 'missing', '*' ] } ]
-    }])
+      :note => [ { :missing => [ '@', 'terminate', 'missing', '*' ] } ]
+    }], [ $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'terminate' ].concat(parts[1...parts.length]))
   end
 end
-$handler['kill'] = KillHandler.new
+KillHandler.new
 
 $actions_feed = %q(
 ---
@@ -1131,11 +1290,13 @@ error:
 class FeedHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'feed', :process_id, :identifiers ],
-      :identifiers => [ [ :process_id, :identifiers ], nil ],
+      :root => [ 2, 'feed', :process_id, :identifiers ],
+      :identifiers => [ 0, :process_id, :identifiers ],
       :help => { :root => "Pass current input set to processes." }
     }
-    @actions = PatternAction.new([ YAML.load($actions_feed) ])
+    @actions = PatternAction.new([ YAML.load($actions_feed) ],
+      [ $default_message_proc ])
+    register
   end
 
   def handle(parts)
@@ -1147,52 +1308,59 @@ class FeedHandler < Handler
     end
   end
 end
-$handler['feed'] = FeedHandler.new
+FeedHandler.new
 
 class EndFeedHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'close', :process_id, :identifiers ],
-      :identifiers => [ [ :process_id, :identifiers ], nil ],
+      :root => [ 2, 'close', :process_id, :identifiers ],
+      :identifiers => [ 0, :process_id, :identifiers ],
       :help => { :root => "Closes process input." }
     }
+    notify = Proc.new do |category, action, message, vars|
+      out = []
+      case category
+      when :note
+        case action
+        when :end_feed_not_open
+          state = 'Closed already'
+        when :end_feed_missing
+          state = 'Missing'
+        else
+          state = nil
+        end
+        out.push("#{state}: #{vars.join(' ')}") unless state.nil?
+      end
+      out
+    end
     @actions = PatternAction.new([{
-      :notify => [ { :end_feed_not_open => [ '@', 'end-feed', 'not-open', '*' ],
+      :note => [ { :end_feed_not_open => [ '@', 'end-feed', 'not-open', '*' ],
         :end_feed_missing => [ '@', 'end-feed', 'missing', '*' ] } ]
-    }])
+    }], [ notify, $default_message_proc ])
+    register
   end
 
   def handle(parts)
     send(@actions, [ 'end-feed' ].concat(parts[1...parts.length]))
   end
-
-  def present_other(parsed, json)
-    if parsed[2] == ''
-      state = "Closed:"
-    elsif parsed[2] == 'not-open'
-      state = "Closed already:"
-    else
-      return
-    end
-    names = parsed[3...parsed.length].join(' ')
-    prompt_print "#{state} #{names}"
-  end
 end
-$handler['close'] = EndFeedHandler.new
+EndFeedHandler.new
 
 class RawHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'raw', :json ],
-      :help => { :root => "Pass unchecked JSON to datalackey." }
+      :root => [ 'raw', :string ],
+      :help => {
+        :root => "Pass unchecked JSON input as single string to datalackey." }
     }
+    register
   end
 
   def handle(parts)
-    dump parts[1...parts.length].join('')
+    dump parts[1]
   end
 end
-$handler['raw'] = RawHandler.new
+RawHandler.new
 
 
 def completer(str)
@@ -1217,12 +1385,11 @@ def completer(str)
       parts = Shellwords.shellsplit(full + "'")
     end
   end
-  if parts.length < 2 # We are just typing the command.
+  if parts.length < 2 and not full.end_with? ' '
     return $handler.keys.sort.grep(/^#{Regexp.escape(str)}/)
   end
   h = $handler[parts[0]]
-  return [] if h.nil?
-  return h.completion_candidates(parts, str)
+  return (h.nil? ? [] : h.completion_candidates(parts, str))
 end
 Readline.completion_proc = Proc.new { |str| completer(str) }
 
@@ -1258,6 +1425,8 @@ while not $exiting and line = Readline.readline($prompt, false)
   end
   if h.verify(parts)
     h.handle(parts)
+  else
+    puts "Command verify failed."
   end
 end
 
@@ -1285,4 +1454,4 @@ $lackey_io.finish
 $presenter.finish
 puts() unless $exiting
 puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
-exit $handler['exit'].code
+exit $exit_handler.code
