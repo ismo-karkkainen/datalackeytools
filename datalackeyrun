@@ -8,6 +8,8 @@ require 'optparse'
 require 'open3'
 require 'json'
 require 'pathname'
+require 'datalackeylib'
+
 
 # Argument handling and checking
 
@@ -82,22 +84,13 @@ end
 arguments = Arguments.new
 arguments.parse
 
-exe = arguments.lackey
-if exe == nil
-  dirs = [ '/usr/local/libexec', '/usr/libexec' ]
-  dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
-  dirs.each do |d|
-    exe = File.join(d, "datalackey")
-    break if File.exist?(exe) and File.executable?(exe)
-    exe = nil
-  end
-  STDERR.puts("datalackey not found.") if exe == nil
-else
-  if not File.exist?(exe) or not File.executable?(exe)
-    STDERR.puts "Not found or not an executable: #{exe}"
-  end
+begin
+  $lackey = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
+rescue ArgumentError => e
+  STDERR.puts e.to_s
+  exit 1
 end
-exit(1) if exe == nil
+stderr_discarder = DiscardReader.new($lackey.stderr)
 
 # datalackey process
 

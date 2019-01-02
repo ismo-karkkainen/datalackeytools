@@ -16,12 +16,13 @@ require 'yaml'
 require 'set'
 require 'pathname'
 require 'io/console'
+require 'datalackeylib'
 
 $version = 1
 history_file_basename = '.datalackeyshell.history'
 history_file_max_lines = 2000
 $echo_lackey_output = false
-$command_echo = false
+$echo_lackey_input = false
 
 # Argument handling and checking
 
@@ -61,7 +62,7 @@ class Arguments
       end
       opts.on('-e', '--echo', 'Turn datalackey command and reply encho on.') do
         $echo_lackey_output = true
-        $command_echo = true
+        $echo_lackey_input = true
       end
     end
     parser.parse!(args)
@@ -93,118 +94,85 @@ end
 arguments = Arguments.new
 arguments.parse(ARGV)
 
-exe = arguments.lackey
-if exe.nil?
-  dirs = [ '/usr/local/libexec', '/usr/libexec' ]
-  dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
-  dirs.each do |d|
-    exe = File.join(d, "datalackey")
-    break if File.exist?(exe) and File.executable?(exe)
-    exe = nil
+# Output when multiple threads and possibly prompt are present.
+
+$prompt = '> '
+$in_prompt = false
+$output_mutex = Mutex.new
+
+def print_lines(messages)
+  return if messages.empty?
+  messages = [ messages ] unless messages.is_a? Array
+  rows, cols = IO.console.winsize
+  cut = []
+  messages.each do |m|
+    if m.length < cols or m.include? '\n'
+      cut.push m
+      next
+    end
+    pieces = m.split
+    line = pieces.first
+    for k in 1...pieces.length
+      if line.length + 1 + pieces[k].length <= cols
+        line << ' ' << pieces[k]
+        next
+      end
+      cut.push line
+      line = '  ' + pieces[k]
+    end
+    cut.push line
   end
-  puts("datalackey not found.") if exe.nil?
-else
-  if not File.exist?(exe) or not File.executable?(exe)
-    STDERR.puts "Not found or not an executable: #{exe}"
+  in_prompt = $in_prompt
+  $output_mutex.synchronize do
+    puts() if in_prompt
+    cut.each { |m| puts m }
+    print($prompt) if in_prompt
+    $stdout.flush
+    Readline.redisplay() if in_prompt
   end
 end
-exit(1) if exe.nil?
 
 # datalackey process
 
-require './datalackey-lib.rb'
+def handle_notifcation(category, action, message, vars)
+  case category.to_s
+  when 'internal'
+    case action.to_s
+    when 'stored' then print_lines("Stored: #{vars.first}")
+    when 'deleted' then print_lines("Deleted: #{vars.first}")
+    when 'data_error' then print_lines("DATA ERROR: #{vars.first}")
+    when 'started'
+    when 'ended'
+    when 'error_format' then print_lines("FORMAT ERROR: #{vars.first}")
+    end
+  when 'internal_error'
+    case action.to_s
+    when 'user_id'
+      print_lines("Bad identifier in run command? #{msg.join(' ')}")
+    else
+      print_lines("INTERNAL ERROR: #{msg.join(' ')}")
+    end
+  end
+end
 
-$lackey = DatalackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
+begin
+  $lackey = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
+rescue ArgumentError => e
+  puts e.to_s
+  exit 1
+end
 stderr_discarder = DiscardReader.new($lackey.stderr)
-$lackey_io = DatalackeyIO.new($lackey.stdin, $lackey.stdout)
-
-# Presenting command output
-
-def indent_puts(long)
-  rows, cols = IO.console.winsize
-  if long.length < cols or long.include? '\n'
-    puts long
-    return
-  end
-  pieces = long.split
-  line = pieces.first
-  for k in 1 ... pieces.length
-    if line.length + 1 + pieces[k].length <= cols
-      line << ' ' << pieces[k]
-      next
-    end
-    puts line
-    line = '  ' + pieces[k]
-  end
-  puts line
-end
-
-$prompt = '> '
-def reprompt
-  return unless $stdin.tty?
-  print $prompt
-  $stdout.flush
-  Readline.redisplay
-end
-
-def prompt_print(message)
-  puts() if $stdin.tty?
-  indent_puts message
-  reprompt
-end
-
-$default_message_proc = Proc.new do |category, action, message, vars|
-  out = []
-  out.push(message.to_s) if $echo_lackey_output
-  case category
-  when :error, 'error'
-    out.push "ERROR #{action} : #{message.join(' ')}"
-  when :data, 'data'
-    out.push "#{action} : #{vars.first}"
-  when :process, 'process'
-    case action
-    when :ended, 'ended'
-    else
-      out.push "#{action} : #{vars.first}"
-    end
-  when :return, 'return'
-    case action
-    when :done, 'done'
-    else
-      out.push("#{action} : #{vars.join(' ')}") unless vars.empty?
-    end
-  else
-    out.push "#{category} / #{action} : #{vars.join(' ')}"
-  end
-  out
-end
-
-class OutputPresenter
-  def initialize
-    @present_output = Thread.new do
-      until $lackey_io.closed?
-        msgs = $lackey_io.get_messages
-        if msgs.empty?
-          sleep(0.1)
-          next
-        end
-        puts
-        msgs.each { |msg| puts msg }
-        reprompt
-      end
-    end
-  end
-
-  def finish
-    @present_output.join
-  end
-end
-$presenter = OutputPresenter.new
+$lackey_io = DatalackeyIO.new($lackey.stdin, $lackey.stdout,
+  Proc.new { |msgs| print_lines(msgs) },
+  Proc.new do |category, action, message, vars|
+    handle_notifcation(category, action, message, vars)
+  end,
+  Proc.new { |json| print_lines(json) if $echo_lackey_input },
+  Proc.new { |json| print_lines(json) if $echo_lackey_output })
 
 # Command handlers
 
 $handler = Hash.new(nil)
-$exiting = false
 
 class Handler
 
@@ -275,7 +243,7 @@ class Handler
       m.concat(" : #{@syntax[:help][key]}") if @syntax[:help].include? key
       msgs.push m
     end
-    msgs.sort.each { |m| indent_puts m }
+    print_lines(msgs.sort)
   end
 
   def completion_search(suggestions, parts, part_idx, key, item)
@@ -354,8 +322,6 @@ class Handler
   end
 
   def verify_search(match, parts, key, item)
-    print match, parts, key, item
-    puts
     return nil if match.length == parts.length
     part = parts[match.length]
     last = match.length + 1 == parts.length
@@ -404,7 +370,7 @@ class Handler
       item.each_index do |k|
         sub = item[k]
         ok = verify_search(match, parts, key, sub)
-        return nil if ok.nil?
+        return nil if ok.nil? or (ok and match.length == parts.length)
         if alternatives
           return true if ok # One match is enough.
           next
@@ -472,21 +438,11 @@ class Handler
   end
 
   def send(patt_act, message, user_id = false)
-    $lackey_io.send(patt_act, message, user_id, $command_echo ? $stdout : nil)
+    $lackey_io.send(patt_act, message, user_id)
   end
 
   def dump(json_as_string)
-    $lackey_io.dump(json_as_string, $command_echo ? $stdout : nil)
-  end
-
-  def present_other(parsed, json)
-    start = parsed[2] == '' ? 3 : 2
-    prompt_print(parsed[start...parsed.length].join("\n")) if parsed.length > 3
-  end
-
-  def present(parsed, json)
-    return if parsed.length < 3
-    present_other(parsed, json)
+    $lackey_io.dump(json_as_string)
   end
 end
 
@@ -510,7 +466,7 @@ class HelpHandler < Handler
         printed.add object
         object.print_help
       else
-        puts "Unknown command: #{key}"
+        print_lines("Unknown command: #{key}")
       end
     end
   end
@@ -519,7 +475,7 @@ end
 HelpHandler.new
 
 class ExitHandler < Handler
-  attr_reader :code
+  attr_reader :code, :exiting
 
   def initialize
     @syntax = {
@@ -527,12 +483,17 @@ class ExitHandler < Handler
       :help => { :root => "Waits for datalackey to finish, exits with code." }
     }
     @code = 0
+    @exiting = false
     register
   end
 
   def handle(parts)
-    $exiting = true
+    @exiting = true
     @code = parts[1] if parts.length == 2
+  end
+
+  def command_name
+    return @syntax[:root][1]
   end
 end
 $exit_handler = ExitHandler.new
@@ -558,7 +519,7 @@ class NullHandler < Handler
     if parts.length == 2
       @null = parts.last
     else
-      puts "String interpreted as null is: '#{@null}'"
+      print_lines("String interpreted as null is: '#{@null}'")
     end
   end
 end
@@ -575,17 +536,18 @@ class ListHandler < Handler
   end
 
   def handle(parts)
-    clean = parts[1...parts.length].sort.uniq
     exps = []
-    clean.each { |e| exps.push Regexp.new(e) }
+    parts[1...parts.length].sort.uniq.each { |e| exps.push Regexp.new(e) }
+    matching = []
     $lackey_io.data.keys.sort.each do |label|
       match = exps.length == 0
       exps.each do |e|
         match = e.match(label)
         break if match
       end
-      puts(label) if match
+      matching.push(label) if match
     end
+    print_lines(matching)
   end
 end
 ListHandler.new
@@ -594,14 +556,16 @@ class SetHandler < Handler
   def initialize
     @syntax = {
       :root => [ 'set', :string, :string ],
-      :help => { :root => "Sets label to JSON-encoded value (in single quotes as needed)." }
+      :help => {
+        :root => "Sets label to JSON-encoded value (use ' or \" as needed)."
+      }
     }
     register
   end
 
   def handle(parts)
-    v = parts[2...parts.length].join("")
-    dump "{\"#{parts[1]}\":#{v}}"
+    k = JSON.generate parts[1]
+    dump "{#{k}:#{parts.last}}"
   end
 end
 SetHandler.new
@@ -609,20 +573,23 @@ SetHandler.new
 class GetHandler < Handler
   def initialize
     @syntax = {
-      :root => [ 'get', :label, :labels ],
+      :root => [ 2, 'get', :label, :labels ],
       :labels => [ 0, :label, :labels ],
       :help => { :root => "Gets labels." }
     }
     pretty_print = Proc.new do |category, action, message, vars|
-      out = []
-      out.push(message.to_s) if $echo_lackey_output
-      out.push JSON.pretty_generate(message.last) if category == :return
-      out
+      case category
+      when :print then [ JSON.pretty_generate(vars.first) ]
+      when :error then [ "Get failure: #{vars.join(' ')}" ]
+      when :note then [ "Missing: #{vars.join(' ')}" ]
+      else []
+      end
     end
     @actions = PatternAction.new([{
-      :return => [ { :get => [ '@', 'get', '', '?' ] } ],
-      :error => [ { :get_fail => [ '@', 'get', 'failed', '*' ] } ]
-    }], [ pretty_print, $default_message_proc ])
+      :print => [ { :get => [ '@', 'get', '', '?' ] } ],
+      :error => [ { :fail => [ '@', 'get', 'failed', '*' ] } ],
+      :note => [ { :missing => [ '@', 'get', 'missing', '*' ] } ]
+    }], [ pretty_print ])
     register
   end
 
@@ -640,9 +607,15 @@ class RenameHandler < Handler
       :label_pair => [ :label, :string ],
       :help => { :root => "Re-labels values. Takes label and new name pairs." }
     }
+    message_proc = Proc.new do |category, action, message, vars|
+      case category
+      when :note then [ "Missing: #{vars.join(' ')}" ]
+      else []
+      end
+    end
     @actions = PatternAction.new([{
       :note => [ { :missing => [ '@', 'rename', 'missing', '*' ] } ]
-    }], [ $default_message_proc ])
+    }], [ message_proc ])
     register
   end
 
@@ -659,9 +632,15 @@ class DeleteHandler < Handler
       :labels => [ 0, :label, :labels ],
       :help => { :root => "Removes labels from storage." }
     }
+    message_proc = Proc.new do |category, action, message, vars|
+      case category
+      when :note then [ "Missing: #{vars.join(' ')}" ]
+      else []
+      end
+    end
     @actions = PatternAction.new([{
       :note => [ { :missing => [ '@', 'delete', 'missing', '*' ] } ]
-    }], [ $default_message_proc ])
+    }], [ message_proc ])
     register
   end
 
@@ -679,21 +658,21 @@ class StorageInfoHandler < Handler
     }
     present = Proc.new do |category, action, message, vars|
       out = []
-      message.last.keys.sort.each do |label|
-        info = message.last[label]
-        description = "#{label} : "
-        sep = ''
-        info.keys.sort.each do |format|
-          description.concat "#{sep}#{format}: #{info[format]}"
-          sep = ', '
+      if category == :return and action == :storage_info
+        vars.first.each_pair do |label, info|
+          description = "#{label} : "
+          fmts = []
+          info.each_pair { |format, size| fmts.push "#{format}: #{size}" }
+          fmts.sort!
+          out.push(description + fmts.join(', '))
         end
-        out.push description
+        out.sort!
       end
       out
     end
     @actions = PatternAction.new([{
-      :return => [ { 'storage-info' => [ '@', 'storage-info', '', '?' ] } ]
-    }], [ present, $default_message_proc ])
+      :return => [ { :storage_info => [ '@', 'storage-info', '', '?' ] } ]
+    }], [ present ])
     register
   end
 
@@ -709,19 +688,17 @@ class PingHandler < Handler
       :root => 'ping',
       :help => { :root => "Check that datalackey responds." }
     }
-    @actions = PatternAction.new([{
-      :return => [ { :done => [ '@', 'no-op', '' ] } ]
-    }], [ $default_message_proc ])
+    @actions = PatternAction.new([]) # Normal internal done is enough.
     register
   end
 
   def handle(parts)
     tracker = send(@actions, [ 'no-op' ])
     if tracker.nil?
-      puts("No connection to datalackey.")
+      print_lines("No connection to datalackey.")
       return
     end
-    puts(tracker.status ? "Datalackey responded." : "Error occurred.")
+    print_lines("Datalackey responded.") if tracker.status
   end
 end
 PingHandler.new
@@ -736,10 +713,10 @@ class VersionHandler < Handler
   end
 
   def handle(parts)
-    description = "shell: #{$version}"
-    v = $lackey_io.version
-    v.keys.sort.each { |key| description.concat "\n#{key}: #{v[key]}" }
-    puts description
+    vs = [ "shell: #{$version}" ]
+    $lackey_io.version.each_pair { |k, v| vs.push "#{k}: #{v}" }
+    vs.sort!
+    print_lines vs
   end
 end
 VersionHandler.new
@@ -748,9 +725,9 @@ class EchoHandler < Handler
   def initialize
     @syntax = {
       :root => [ -1, :lackey, :lackeywhat ],
-      :lackey => [ 'lackey', :inout, :onoff ],
-      :lackeywhat => 'lackey?',
-      :inout => [ -1, 'command', 'reply' ],
+      :lackey => [ 'echo', :inout, :onoff ],
+      :lackeywhat => 'echo?',
+      :inout => [ -1, 'command', 'reply', 'all' ],
       :onoff => [ -1, 'on', 'off' ],
       :help => {
         :lackey => "Set the printing of communication with datalackey on or off.",
@@ -762,11 +739,13 @@ class EchoHandler < Handler
 
   def handle(parts)
     if parts.length > 1
-      $command_echo = parts[2] == 'on' if parts[1] == 'command'
-      $echo_lackey_output = parts[2] == 'on' if parts[1] == 'reply'
+      what = parts[1]
+      on = parts[2] == 'on'
+      $echo_lackey_input = on if what == 'command' or what == 'all'
+      $echo_lackey_output = on if what == 'reply'or what == 'all'
     else
-      puts "command: #{$command_echo ? 'on' : 'off'}"
-      puts "reply  : #{$echo_lackey_output ? 'on' : 'off'}"
+      print_lines([ "command: #{$echo_lackey_input ? 'on' : 'off'}",
+        "reply  : #{$echo_lackey_output ? 'on' : 'off'}" ])
     end
   end
 end
@@ -798,7 +777,7 @@ class HistoryHandler < Handler
   def handle(parts)
     exps = []
     parts[1...parts.length].each { |e| exps.push Regexp.new(e) }
-    scan_history(exps).each { |h| puts h }
+    print_lines scan_history(exps)
   end
 end
 HistoryHandler.new
@@ -828,19 +807,16 @@ class RecallHandler < Handler
   end
 
   def print_until_first(new_to_old, exps)
-    n2o = scan_until_first(new_to_old, exps)
-    while not n2o.empty?
-      puts n2o.pop
-    end
+    print_lines scan_until_first(new_to_old, exps).reverse
   end
 
   def handle(parts)
     id_given = parts.length == 2
     es = [ '^input[+]?[[:blank:]]+', '^output[+]?[[:blank:]]+',
       '^arg[+]?[[:blank:]]+', '^env[+]?[[:blank:]]+', '^env-clear$',
-      '^channel[[:blank:]]+', '^exit' ]
+      '^channel[[:blank:]]+', "^#{$exit_handler.command_name}" ]
     es.push('^run[[:blank:]]+' + (id_given ? parts[1] + '[[:blank:]]+' : ''))
-    exps = Array.new
+    exps = []
     es.each { |e| exps.push Regexp.new(e) }
     candidates = scan_history(exps)
     # Drop everything after the last matching run command.
@@ -848,14 +824,15 @@ class RecallHandler < Handler
       candidates.pop
     end
     # Pick commands before last exit. Reverses order.
-    session = Array.new
-    while not candidates.empty? and not candidates.last.start_with? 'exit'
+    session = []
+    while not candidates.empty? and not candidates.last.start_with? $exit_handler.command_name
       session.push candidates.pop
     end
     print_until_first(session, [ '^channel[[:blank:]]+in[[:blank:]]' ])
     print_until_first(session, [ '^channel[[:blank:]]+out[[:blank:]]' ])
     print_until_first(session, [ '^channel[[:blank:]]+err[[:blank:]]' ])
-    print_until_first(session, [ '^env[[:blank:]]', '^env[+][[:blank:]]', '^env-clear$' ])
+    print_until_first(session,
+      [ '^env[[:blank:]]', '^env[+][[:blank:]]', '^env-clear$' ])
     print_until_first(session, [ '^arg[[:blank:]]', '^arg[+][[:blank:]]' ])
     print_until_first(session, [ '^input[[:blank:]]', '^input[+][[:blank:]]' ])
     print_until_first(session, [ '^output[[:blank:]]', '^output[+][[:blank:]]', '^output-naming[[:blank:]]' ])
@@ -878,7 +855,7 @@ class NotifyHandler < Handler
         :notifywhat => "Print data/process notification status."
       }
     }
-    @notify = { 'process' => 'off', 'data' => 'on' }
+    @notify = { 'process' => 'off', 'data' => 'off' }
     register
   end
 
@@ -886,7 +863,9 @@ class NotifyHandler < Handler
     if parts.length > 1
       @notify[parts[1]] = parts[2]
     else
-      @notify.keys.sort.each { |key| puts "#{key} : #{@notify[key]}" }
+      msgs = []
+      @notify.keys.sort.each { |key| msgs.push "#{key} : #{@notify[key]}" }
+      print_lines msgs
     end
   end
 
@@ -923,11 +902,13 @@ class InputHandler < Handler
 
   def handle(parts)
     if parts[0] == 'input?'
+      msgs = []
       @order.each do |name|
         direct, val = @mapping[name]
         t = direct ? "=" : ":"
-        puts "#{name} #{t} #{val}"
+        msgs.push "#{name} #{t} #{val}"
       end
+      print_lines msgs
       return
     end
     clear = parts[0] == 'input'
@@ -940,7 +921,7 @@ class InputHandler < Handler
       src = parts[idx + 2]
       idx += 3
       if map_in.has_key?(name) or not clear and @mapping.has_key?(name)
-        puts "Error: #{name} already in mapping."
+        print_lines "Error: #{name} already in mapping."
         return
       end
       order_in.push name
@@ -990,41 +971,41 @@ class OutputHandler < Handler
 
   def handle(parts)
     if parts[0] == 'output?'
-      puts("Prefix: #{@prefix}") unless @prefix.nil?
-      puts("Postfix: #{@postfix}") unless @postfix.nil?
+      msgs = []
+      msgs.push("Prefix: #{@prefix}") unless @prefix.nil?
+      msgs.push("Postfix: #{@postfix}") unless @postfix.nil?
       @mapping.keys.sort.each do |name|
         label = @mapping[name]
-        puts "\"#{name}\" \"#{label}\""
+        msgs.push "\"#{name}\" \"#{label}\""
       end
+      print_lines msgs
       return
-    end
-    if parts[0] == 'output-naming'
+    elsif parts[0] == 'output-naming'
       @prefix = parts[1].length ? parts[1] : nil
       @postfix = parts[2].length ? parts[2] : nil
       return
-    end
-    if parts[0] == 'output'
+    elsif parts[0] == 'output'
       @mapping.clear
       @prefix = nil
       @postfix = nil
     end
+    msgs = []
     idx = 1
     while idx < parts.length
       name = parts[idx]
       src = parts[idx + 1]
       idx += 2
-      puts("#{name} : #{@mapping[name]} -> #{src}") if @mapping.has_key? name
+      msgs.push("#{name} : #{@mapping[name]} -> #{src}") if @mapping.has_key? name
       @mapping[name] = src
     end
+    print_lines msgs
   end
 
   def command_part
     command = []
     command.concat([ 'output-prefix', @prefix ]) unless @prefix.nil?
     command.concat([ 'output-postfix', @postfix ]) unless @postfix.nil?
-    @mapping.each_pair do |name, val|
-      command.concat [ 'output', name, val ]
-    end
+    @mapping.each_pair { |name, val| command.concat [ 'output', name, val ] }
     return command
   end
 end
@@ -1054,11 +1035,13 @@ class EnvHandler < Handler
 
   def handle(parts)
     if parts[0] == 'env?'
-      puts("Restrict environment to given values.") if @clear == true
+      msgs = []
+      msgs.push("Restrict environment to given values.") if @clear == true
       @mapping.keys.sort.each do |name|
         value = @mapping[name]
-        puts "\"#{name}\" \"#{value}\""
+        msgs.push "\"#{name}\" \"#{value}\""
       end
+      print_lines msgs
       return
     elsif parts[0] == 'env-clear'
       @clear = true
@@ -1067,28 +1050,30 @@ class EnvHandler < Handler
       @mapping.clear
       @clear = false
     end
+    msgs = []
     idx = 1
     while idx < parts.length
       name = parts[idx]
       value = parts[idx + 1]
       idx += 2
-      puts("#{name} : #{@mapping[name]} -> #{value}") if @mapping.has_key? name
+      msgs.push("#{name} : #{@mapping[name]} -> #{value}") if @mapping.has_key? name
       @mapping[name] = value
     end
+    print_lines msgs
   end
 
   def command_part
     command = []
     command.push('env-clear') if @clear
-    @mapping.each_pair do |name, val|
-      command.concat [ 'env', name, val ]
-    end
+    @mapping.each_pair { |name, val| command.concat [ 'env', name, val ] }
     return command
   end
 end
 $env_handler = EnvHandler.new
 
 class ArgHandler < Handler
+  attr_reader :command_part
+
   def initialize
     @syntax = {
       :root => [ -1, :arg, :argadd, :argwhat ],
@@ -1102,23 +1087,19 @@ class ArgHandler < Handler
         :argwhat => "Print current program argument list."
       }
     }
-    @args = []
+    @command_part = []
     register
   end
 
   def handle(parts)
     if parts[0] == 'arg?'
-      @args.each do |arg|
-        puts "\"#{arg}\""
-      end
+      msgs = []
+      @command_part.each { |arg| msgs.push "\"#{arg}\"" }
+      print_lines msgs
       return
     end
-    @args.clear if parts[0] == 'arg'
-    @args.concat parts[1...parts.length]
-  end
-
-  def command_part
-    return @args.clone
+    @command_part.clear if parts[0] == 'arg'
+    @command_part.concat parts[1...parts.length]
   end
 end
 $arg_handler = ArgHandler.new
@@ -1145,9 +1126,9 @@ class ChannelHandler < Handler
 
   def handle(parts)
     if parts[0] == 'channel?'
-      @channels.keys.sort.each do |c|
-        puts "#{c} #{@channels[c]}"
-      end
+      msgs = []
+      @channels.each_pair { |c, fmt| msgs.push "#{c} #{fmt}" }
+      print_lines msgs.sort
       return
     end
     @channels[parts[1]] = parts[2]
@@ -1157,9 +1138,9 @@ class ChannelHandler < Handler
     command = []
     @channels.each_pair do |c, f|
       next if f == 'none'
-      direction = (c == 'in') ? 'in' : 'out'
-      fmt = (f == 'json') ? 'JSON' : f
-      command.concat [ direction, fmt, c ]
+      command.push((c == 'in') ? 'in' : 'out')
+      command.push((f == 'json') ? 'JSON' : f)
+      command.push "std#{c}"
     end
     return command
   end
@@ -1168,72 +1149,140 @@ $channel_handler = ChannelHandler.new
 
 $actions_run_common = %q(
 ---
-return:
-- run-finished: [ "@", run, finished ]
-- run-terminated: [ "@", run, terminated ]
 error:
-- args-missing: [ "@", run, error, missing, "*" ]
-- command-error: [ "@", run, error, identifier, in-use ]
+- args_missing: [ "@", run, error, missing, "*" ]
+- command_error: [ "@", run, error, identifier, in-use ]
 - syntax: [ "@", run, error, "?", argument, unknown ]
 - syntax: [ "@", run, error, "?", duplicate, "?" ]
-- command-error: [ "@", run, error, change-directory, "?", "?" ]
-- command-error: [ "@", run, error, env, argument, duplicate, "?" ]
-- command-error: [ "@", run, error, env, argument, invalid, "?" ]
-- command-error: [ "@", run, error, in, missing ]
-- command-error: [ "@", run, error, in, multiple ]
-- command-error: [ "@", run, error, notify, no-input ]
-- command-error: [ "@", run, error, out, duplicate ]
-- command-error: [ "@", run, error, out, missing ]
-- command-error: [ "@", run, error, output, duplicate, "?" ]
-- command-error: [ "@", run, error, program, "*" ]
-- run-internal: [ "@", run, error, exception ]
-- run-internal: [ "@", run, error, no-memory ]
-- run-internal: [ "@", run, error, no-processes ]
-- run-internal: [ "@", run, error, no-thread ]
-- run-internal: [ "@", run, error, pipe ]
+- command_error: [ "@", run, error, change-directory, "?", "?" ]
+- command_error: [ "@", run, error, env, argument, duplicate, "?" ]
+- command_error: [ "@", run, error, env, argument, invalid, "?" ]
+- command_error: [ "@", run, error, in, missing ]
+- command_error: [ "@", run, error, in, multiple ]
+- command_error: [ "@", run, error, notify, no-input ]
+- command_error: [ "@", run, error, out, duplicate ]
+- command_error: [ "@", run, error, out, missing ]
+- command_error: [ "@", run, error, output, duplicate, "?" ]
+- command_error: [ "@", run, error, program, "*" ]
+- run_internal: [ "@", run, error, exception ]
+- run_internal: [ "@", run, error, no-memory ]
+- run_internal: [ "@", run, error, no-processes ]
+- run_internal: [ "@", run, error, no-thread ]
+- run_internal: [ "@", run, error, pipe ]
+- syntax: [ "@", "?", error, argument, invalid ]
+- syntax: [ "@", "?", error, argument, not-integer ]
+- syntax: [ "@", "?", missing, "*" ]
 note:
-- run-error-input-failed: [ "@", run, error, input, failed ]
-- run-child-error-output-format: [ "@", run, error, format ]
-- run-child-error-output-format: [ "@", error, format ]
-- run-exit: [ "@", run, exit, "?" ]
-- run-signal: [ "@", run, signal, "?" ]
-- run-stop: [ "@", run, stopped, "?" ]
-- run-continue: [ "@", run, continued ]
-- run-closed: [ "@", run, input, closed ]
+- run_error_input_failed: [ "@", run, error, input, failed ]
+- run_child_error_output_format: [ "@", run, error, format ]
+- run_child_error_output_format: [ "@", error, format ]
 bytes:
 - bytes: [ "@", run, bytes, "?", "*" ]
 )
 
+$actions_run_only = %q(
+---
+note:
+- run_terminated: [ "@", run, terminated, "?" ]
+- run_exit: [ "@", run, exit, "?" ]
+- run_signal: [ "@", run, signal, "?" ]
+- run_stop: [ "@", run, stopped, "?" ]
+- run_continue: [ "@", run, continued ]
+)
+
+$actions_bgrun_only = %q(
+---
+return:
+- run_running: [ "@", run, running, "?" ]
+note:
+- run_terminated: [ "@", run, terminated, "?" ]
+- run_exit: [ "@", run, exit, "?" ]
+- run_signal: [ "@", run, signal, "?" ]
+- run_stop: [ "@", run, stopped, "?" ]
+- run_continue: [ "@", run, continued ]
+- run_closed: [ "@", run, input, closed ]
+)
+
 class RunHandler < Handler
+  @@actions_run_common = YAML.load($actions_run_common)
+  @@actions_run_only = YAML.load($actions_run_only)
+  @@actions_bgrun_only = YAML.load($actions_bgrun_only)
+
   def initialize
     @syntax = {
-      :root => [ 3, 'run', :identifier, :executable, 'close' ],
+      :root => [ 3, 'run', :identifier, :executable, 'close', '&' ],
       :identifier => [ -1, :null, :int, :string ],
       :help => { :root => "Runs executable as identifier. If close is given, the input is closed after current input has been passed on. Uses current input, output, channel, env, and arg settings." }
     }
-    print_bytes = Proc.new do |category, action, message, vars|
-      out = []
-      out.push(''.concat(*message[3...message.length])) if 3 < message.length
-      out
+    run_common = Proc.new do |category, action, message, vars|
+      case category.to_s
+      when 'error' then [ "ERROR: #{action} : #{message.join(' ')}" ]
+      when 'note'
+        case action.to_s
+        when 'run_error_input_failed'
+          [ "Input failed: #{message.first.to_s}" ]
+        when 'run_child_error_output_format'
+          [ "Output format error: #{message.first}" ]
+        else []
+        end
+      when :bytes, 'bytes' then [ ''.concat(*vars) ]
+      else []
+      end
     end
-    @actions = PatternAction.new([ YAML.load($actions_run_common) ],
-      [ print_bytes, $default_message_proc ])
+    run_only = Proc.new do |category, action, message, vars|
+      case category.to_s
+      when 'note'
+        case action.to_s
+        when 'run_terminated' then [ "Terminated." ]
+        when 'run_exit'
+          (0 < vars.first) ? [ "Exit: #{vars.first}" ] : []
+        when 'run_signal' then [ "Signal: #{vars.first}" ]
+        when 'run_stop' then [ "Stopped by signal: #{vars.first}" ]
+        when 'run_continue' then [ "Continued." ]
+        else []
+        end
+      else []
+      end
+    end
+    @actions = PatternAction.new([ @@actions_run_only, @@actions_run_common ],
+      [ run_only, run_common ])
+    bgrun_only = Proc.new do |category, action, message, vars|
+      case category.to_s
+      when 'return'
+        case action.to_s
+        when 'run_running' then [ "PID: #{vars.first}" ]
+        else []
+        end
+      when 'note'
+        case action.to_s
+        when 'run_terminated' then [ "Terminated: #{message.first}" ]
+        when 'run_exit'
+          (0 < vars.first) ? [ "Exit #{message.first}: #{vars.first}" ] : []
+        when 'run_signal' then [ "Signal #{message.first}: #{vars.first}" ]
+        when 'run_stop' then [ "Stopped #{message.first}: #{vars.first}" ]
+        when 'run_continue' then [ "Continued: #{message.first}" ]
+        else []
+        end
+      else []
+      end
+    end
+    @bgactions = PatternAction.new(
+      [ @@actions_bgrun_only, @@actions_run_common ],
+      [ bgrun_only, run_common ])
     register
   end
 
   def handle(parts)
-    id = parts[1]
-    exe = parts[2]
-    command = [ 'run' ]
+    command = [ parts[1], 'run' ]
+    command.push('end-feed') if parts[3] == 'close' or parts[3] != '&'
     command.concat $notify_handler.command_part
     command.concat $input_handler.command_part
     command.concat $output_handler.command_part
     command.concat $channel_handler.command_part
-    command.push('end-feed') if parts.length == 4
     command.concat $env_handler.command_part
-    command.concat [ 'program', exe ]
+    command.concat [ 'program', parts[2] ]
     command.concat $arg_handler.command_part
-    send(@actions, command, true)
+    send(parts.last == '&' ? @bgactions : @actions, command, true)
   end
 end
 RunHandler.new
@@ -1248,12 +1297,10 @@ class PsHandler < Handler
   end
 
   def handle(parts)
-    report = " PID\t: Identifier"
+    report = [ " PID\t: Identifier" ]
     procs = $lackey_io.process
-    procs.keys.sort do |id|
-      report.concat "\n #{procs[id]}\t: #{id}"
-    end
-    puts report
+    procs.keys.sort.each { |id| report.push " #{procs[id]}\t: #{id}" }
+    print_lines report
   end
 end
 PsHandler.new
@@ -1265,9 +1312,15 @@ class KillHandler < Handler
       :identifiers => [ 0, :process_id, :identifiers ],
       :help => { :root => "Terminates processes." }
     }
+    message_proc = Proc.new do |category, action, message, vars|
+      case category
+      when :note then [ "Missing: #{vars.join(' ')}" ]
+      else []
+      end
+    end
     @actions = PatternAction.new([{
       :note => [ { :missing => [ '@', 'terminate', 'missing', '*' ] } ]
-    }], [ $default_message_proc ])
+    }], [ message_proc ])
     register
   end
 
@@ -1280,22 +1333,37 @@ KillHandler.new
 $actions_feed = %q(
 ---
 error:
-- args-missing: [ "@", feed, error, missing, "*" ]
-- command-error: [ "@", feed, error, "?", argument, unknown ]
-- command-error: [ "@", feed, error, "?", duplicate, "?" ]
-- feed-closed: [ "@", feed, error, closed ]
-- feed-process: [ "@", feed, error, not-found ]
+- args_missing: [ "@", feed, error, missing, "*" ]
+- argument_unknown: [ "@", feed, error, "?", argument, unknown ]
+- duplicate: [ "@", feed, error, "?", duplicate, "?" ]
+- feed_closed: [ "@", feed, error, closed ]
+- feed_process: [ "@", feed, error, not-found ]
 )
 
 class FeedHandler < Handler
+  @@actions_feed = YAML.load($actions_feed)
+
   def initialize
     @syntax = {
       :root => [ 2, 'feed', :process_id, :identifiers ],
       :identifiers => [ 0, :process_id, :identifiers ],
       :help => { :root => "Pass current input set to processes." }
     }
-    @actions = PatternAction.new([ YAML.load($actions_feed) ],
-      [ $default_message_proc ])
+    message_proc = Proc.new do |category, action, message, vars|
+      case category
+      when :error
+        case action
+        when 'args_missing' then [ "Missing: #{vars.join(' ')}" ]
+        when 'argument_unknown' then [ "Unknown: #{vars.join(' ')}" ]
+        when 'duplicate' then [ "Duplicate: #{vars.join(' ')}" ]
+        when 'feed_closed' then [ "Closed." ]
+        when 'feed_process' then [ "No process." ]
+        else []
+        end
+      else []
+      end
+    end
+    @actions = PatternAction.new([ @@actions_feed ], [ message_proc ])
     register
   end
 
@@ -1318,25 +1386,20 @@ class EndFeedHandler < Handler
       :help => { :root => "Closes process input." }
     }
     notify = Proc.new do |category, action, message, vars|
-      out = []
       case category
       when :note
         case action
-        when :end_feed_not_open
-          state = 'Closed already'
-        when :end_feed_missing
-          state = 'Missing'
-        else
-          state = nil
+        when :not_open then [ "Closed already: #{vars.join(' ')}" ]
+        when :missing then [ "Missing: #{vars.join(' ')}" ]
+        else []
         end
-        out.push("#{state}: #{vars.join(' ')}") unless state.nil?
+      else []
       end
-      out
     end
     @actions = PatternAction.new([{
-      :note => [ { :end_feed_not_open => [ '@', 'end-feed', 'not-open', '*' ],
-        :end_feed_missing => [ '@', 'end-feed', 'missing', '*' ] } ]
-    }], [ notify, $default_message_proc ])
+      :note => [ { :not_open => [ '@', 'end-feed', 'not-open', '*' ],
+        :missing => [ '@', 'end-feed', 'missing', '*' ] } ]
+    }], [ notify ])
     register
   end
 
@@ -1406,33 +1469,38 @@ if File.exist? history_file
   end
 end
 
-while not $exiting and line = Readline.readline($prompt, false)
+while not $exit_handler.exiting
+  $output_mutex.synchronize { } # So we do not print prompt during other output.
+  $in_prompt = true
+  line = Readline.readline($prompt, false)
+  $in_prompt = false
+  break if line.nil?
   line.strip!
   begin
     parts = line.shellsplit
   rescue ArgumentError => e
-    puts e.to_s
+    print_lines e.to_s
     next
   end
   next if parts.length == 0
   h = $handler[parts[0]]
   if h.nil?
-    puts "Unknown command: #{parts[0]}"
+    print_lines "Unknown command: #{parts[0]}"
     next
   end
-  if $stdin.tty? and (Readline::HISTORY.length == 0 or Readline::HISTORY[Readline::HISTORY.length - 1] != line)
-    Readline::HISTORY.push line
-  end
   if h.verify(parts)
+    if $stdin.tty? and (Readline::HISTORY.empty? or Readline::HISTORY[Readline::HISTORY.length - 1] != line)
+      Readline::HISTORY.push line
+    end
     h.handle(parts)
   else
-    puts "Command verify failed."
+    print_lines "Command verify failed."
   end
 end
 
 # For recall to work, ensure there is exit in case ctrl-D was pressed.
-if Readline::HISTORY.length == 0 or not Readline::HISTORY[Readline::HISTORY.length - 1].start_with? 'exit'
-  Readline::HISTORY.push 'exit'
+if Readline::HISTORY.empty? or not Readline::HISTORY[Readline::HISTORY.length - 1].start_with? $exit_handler.command_name
+  Readline::HISTORY.push $exit_handler.command_name
 end
 
 # Save history.
@@ -1451,7 +1519,6 @@ $lackey.finish
 $lackey_io.close
 stderr_discarder.close
 $lackey_io.finish
-$presenter.finish
-puts() unless $exiting
+puts() unless $exit_handler.exiting
 puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
 exit $exit_handler.code
