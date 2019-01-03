@@ -8,6 +8,7 @@ require 'optparse'
 require 'open3'
 require 'json'
 require 'pathname'
+require 'yaml'
 require 'datalackeylib'
 
 
@@ -29,12 +30,6 @@ class Arguments
       opts.banner = "Usage: datalackeyrun [options] command params"
       opts.separator ""
       opts.separator "Options:"
-      opts.on("--memory", "Store data in memory.") do
-        @memory = true
-      end
-      opts.on("--directory [DIR]", "Store data under (working) directory.") do |d|
-        @directory = d || ''
-      end
       opts.on_tail("-h", "--help", "Print this help and exit.") do
         puts opts
         exit 0
@@ -42,41 +37,35 @@ class Arguments
       opts.on("--lackey PROGRAM", "Use specified datalackey executable.") do |e|
         @lackey = e
       end
+      opts.on("--memory", "Store data in memory.") { @memory = true }
+      opts.on("--directory [DIR]", "Store data under (working) directory.") do |d|
+        @directory = d || ''
+      end
       opts.on("--permissions MODE", [:user, :group, :other], "Use permissions extended to (user, group, other) for files.") do |p|
         @permissions = { :user => "600", :group => "660", :other => "666" }[p]
       end
-      opts.on('--terminate_delay DELAY', "Wait DELAY seonds until teminating remaining processes, 0 disables.") do |d|
+      opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
         @terminate_delay = d
       end
     end
     parser.parse!
     # Perform sanity checks on the values.
-    if @memory and not (@directory.nil? and @permissions.nil?)
-      STDERR.puts "Cannot use both --memory and --directory or --permissions."
-      exit 1
-    end
-    if not @memory
-      if @directory.nil?
-        @directory = Dir.pwd
-      elsif not Dir.exist? @directory
-        STDERR.puts "Given directory does not exist: #{@directory}"
-        exit 1
-      end
-      @permissions = "600" if @permissions.nil?
-    end
-    if @terminate_delay.nil?
-      @terminate_delay = 5
-    else
-      begin
+    begin
+      @memory, @directory, @permissions =
+        DatalackeyProcess.verify_memory_directory_permissions(
+          @memory, @directory, @permissions)
+      if @terminate_delay.nil?
+        @terminate_delay = 5
+      else
         @terminate_delay = Float(@terminate_delay)
-      rescue ArgumentError => ex
-        STDERR.puts ex.to_s
-        exit 1
+        if @terminate_delay < 0
+          STDERR.puts "Terminate delay less than 0."
+          exit 1
+        end
       end
-      if @terminate_delay < 0
-        STDERR.puts "Terminate delay less than 0."
-        exit 1
-      end
+    rescue ArgumentError => e
+      STDERR.puts e.to_s
+      exit 1
     end
   end
 end
@@ -84,171 +73,136 @@ end
 arguments = Arguments.new
 arguments.parse
 
+# datalackey process
 begin
-  $lackey = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
+  $lackey_proc = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
 rescue ArgumentError => e
-  STDERR.puts e.to_s
+  puts e.to_s
   exit 1
 end
-stderr_discarder = DiscardReader.new($lackey.stderr)
+lackey_stderr = StoringReader.new($lackey_proc.stderr)
+$lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil)
 
-# datalackey process
+run_actions = YAML.load(%q(
+---
+return:
+- run_running: [ "@", run, running, "?" ]
+error:
+- error: [ "@", run, error, "*" ]
+- syntax: [ "@", "?", error, argument, invalid ]
+- syntax: [ "@", "?", error, argument, not-integer ]
+- syntax: [ "@", "?", missing, "*" ]
+note:
+- run_error_input_failed: [ "@", run, error, input, failed ]
+- run_child_error_output_format: [ "@", run, error, format ]
+- run_child_error_output_format: [ "@", error, format ]
+- run_terminated: [ "@", run, terminated, "?" ]
+- run_exit: [ "@", run, exit, "?" ]
+- run_signal: [ "@", run, signal, "?" ]
+- run_stop: [ "@", run, stopped, "?" ]
+- run_continue: [ "@", run, continued ]
+- run_closed: [ "@", run, input, closed ]
+bytes:
+- bytes: [ "@", run, bytes, "?", "*" ]
+))
 
-class LackeyProcess
-  attr_reader :exit_code, :stdout, :stderr
+$output_mutex = Mutex.new
+$output = []
+$quitting = false
+$exit_code = 0
 
-  def initialize(exe, directory, permissions, memory)
-    @accum_stdout = []
-    @ready_stdout = Queue.new
-    @unwanted_stderr = Queue.new
-    args = [ exe,
-        '--command-in', 'stdin', 'JSON', '--command-out', 'stdout', 'JSON' ]
-    args.push('--memory') if memory
-    args.concat([ '--directory', directory ]) if directory != nil
-    args.concat([ '--permissions', permissions ]) if not memory
-    @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*args)
-    @read_stdout = Thread.new do
-      while true do
-        begin
-          raw = @stdout.readpartial(32768)
-        rescue EOFError
-          break
-        end
-        loc = raw.index("\n")
-        until loc.nil? do
-          @accum_stdout.push(raw[0, loc]) if loc > 0 # Newline begins?
-          # Found full line that is not empty.
-          @ready_stdout.push(@accum_stdout.join) if @accum_stdout.length
-          @accum_stdout.clear
-          raw = raw[loc + 1, raw.length - loc - 1]
-          loc = raw.index("\n")
-        end
-        @accum_stdout.push(raw) if raw.length > 0
-      end
-      @stdout.close
+def run_proc(category, action, message, vars)
+  case category.to_s
+  when 'error'
+    $output_mutex.synchronize do
+      $output.push "ERROR: #{action} : #{message[3...message.length].join(' ')}"
     end
-    @read_stderr = Thread.new do
-      while true do
-        begin
-          raw = @stderr.readpartial(32768)
-        rescue EOFError
-          break
-        end
-        # There should be nothing so no sweat on processing.
-        @unwanted_stderr.push(raw)
-      end
-      @stderr.close
+    $quitting = true
+  when 'note'
+    case action.to_s
+    when 'run_error_input_failed'
+      $output_mutex.synchronize { $output.push "Input failed." }
+    when 'run_child_error_output_format'
+      $output_mutex.synchronize { $output.push "Output format error." }
+    when 'run_terminated'
+      $output_mutex.synchronize { $output.push "Terminated." }
+      $quitting = true
+    when 'run_exit'
+      $exit_code = vars.last
+      $quitting = true
+    when 'run_signal'
+      $output_mutex.synchronize { $output.push "Signal: #{vars.first}" }
+    when 'run_stop'
+      $output_mutex.synchronize { $output.push "Stopped: #{vars.first}" }
+    when 'run_continue'
+      $output_mutex.synchronize { $output.push "Continued." }
     end
-    @last_identifier = 0
+  when 'bytes'
+    $output_mutex.synchronize { $output.push ''.concat(*vars) }
   end
-
-  def relay(message)
-    @stdin.write message
-  end
-
-  def close
-    @stdin.close
-  end
-
-  def finish
-    @wait_thread.join
-    @read_stdout.join
-    @read_stderr.join
-    @exit_code = @wait_thread.value.exitstatus
-  end
-
-  def get_output
-    return nil if @ready_stdout.empty?
-    return @ready_stdout.pop
-  end
-
-  def get_lackey_error
-    return nil if @unwanted_stderr.empty?
-    return @unwanted_stderr.pop
-  end
+  return []
 end
 
-$lackey = LackeyProcess.new(exe, arguments.directory, arguments.permissions, arguments.memory)
+run_pa = PatternAction.new([ run_actions ],
+  [ Proc.new { |ctg, act, msg, vars| run_proc(ctg, act, msg, vars) } ])
+
+# Run the program that was given in the command-line.
+cmd = [ '*', 'run' ]
+cmd.concat [ "in","JSON","stdin","out","JSON","stdout","out","bytes","stderr" ]
+cmd.concat [ "notify","data","notify","process" ]
+cmd.concat [ "program" ]
+cmd.concat argv
+$lackey.send(run_pa, cmd, true)
 
 # Main loop
 
-cmd = '["*","run","in","JSON","stdin","out","JSON","stdout","out","bytes","stderr","program"'
-argv.each do |a|
-  cmd.concat ",\"#{a}\""
-end
-cmd.concat ']'
-$lackey.relay cmd
-
-other_processes = {}
-quitting = false
-terminate_time = nil
-exit_code = 0
-until $lackey.stdout.closed? and $lackey.stderr.closed?
-  had_output = false
-  while out = $lackey.get_output
-    break if out.nil?
-    had_output = true
-    arr = JSON.parse(out)
-    if arr[1] == 'run'
-      # Related to the program being run.
-      if arr[2] == 'error'
-        quitting = true
-      elsif arr[2] == 'exit'
-        exit_code = arr[3].to_i
-      elsif arr[2] == 'finished' or arr[2] == 'terminated'
-        unless other_processes.empty?
-          # End feeds of running processes in the hopes they quit on their own.
-          cmd = '[1,"end-feed"'
-          other_processes.each_key do |id|
-            cmd.concat ",\"#{id}\""
-          end
-          cmd.concat ']'
-          $lackey.relay cmd
-        end
-        quitting = true
-        if arguments.terminate_delay > 0
-          terminate_time = Time.new + arguments.terminate_delay
-        end
-      elsif arr[2] == 'bytes'
-        msg = ''
-        arr[3...arr.length].each do |b|
-          msg.concat b.chr
-        end
-        STDOUT.print msg
-        STDOUT.flush
-      end
-    elsif arr[0].nil?
-      next unless arr[1] == 'process'
-      if arr[2] == 'started'
-        other_processes[arr[3]] = arr[4]
-      elsif arr[2] == 'ended'
-        other_processes.delete arr[3]
-      end
-    end
-    next unless quitting
-    if other_processes.empty?
-      $lackey.close
-      next
-    end
-    next if terminate_time.nil?
-    next if Time.new <=> terminate_time == -1
-    cmd = '[2,"terminate"'
-    other_processes.each_key do |id|
-      cmd.concat ",\"#{id}\""
-    end
-    cmd.concat ']'
-    $lackey.relay cmd
-    terminate_time = nil
+def get_output
+  $output_mutex.synchronize do
+    result = $output
+    $output = []
+    return result
   end
-  # There should not be anything here.
-  while out = $lackey.get_lackey_error
-    break if out.nil?
-    STDOUT.puts out
+end
+
+def id_list_message(command, ids)
+  return if ids.empty?
+  cmd = [ nil, command ] # No need to get replies.
+  cmd.concat ids
+  $lackey.dump JSON.generate cmd
+end
+
+terminate_time = nil
+until $lackey.closed?
+  had_output = false
+  get_output.each do |out|
     had_output = true
+    puts out
+  end
+  lackey_stderr.readlines.each do |e|
+    had_output = true
+    STDERR.puts e
   end
   sleep(0.1) unless had_output
+  next unless $quitting
+  # Here controller has exited.
+  procs = $lackey.processes
+  if procs.empty?
+    $lackey.close # Causes datalackey to exit. Output closing then exits the loop.
+    next
+  end
+  if terminate_time.nil? # On first quitting, set terminate time and end feeds.
+    terminate_time = Time.new + arguments.terminate_delay
+    id_list_message('end-feed', procs.keys)
+    next # If terminate delay is 0 this gives a little time for normal exit.
+  end
+  next if (Time.new <=> terminate_time) == -1
+  # Time is up and there are running processes.
+  id_list_message('terminate', procs.keys)
 end
 
+$lackey_proc.finish
+$lackey.close
+lackey_stderr.close
 $lackey.finish
-STDERR.puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
-exit exit_code
+puts("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
+exit $exit_code

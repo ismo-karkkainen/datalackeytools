@@ -66,27 +66,13 @@ class Arguments
       end
     end
     parser.parse!(args)
-    # Perform sanity checks on the values.
-    if not @memory.nil? and not (@directory.nil? and @permissions.nil?)
-      STDERR.puts "Cannot use both --memory and --directory or --permissions."
+    begin
+      @memory, @directory, @permissions =
+        DatalackeyProcess.verify_memory_directory_permissions(
+          @memory, @directory, @permissions)
+    rescue ArgumentError => e
+      STDERR.puts e.to_s
       exit 1
-    end
-    if @memory.nil?
-      if @directory.nil?
-        @directory = Dir.pwd
-      elsif not Dir.exist? @directory
-        STDERR.puts "Given directory does not exist: #{@directory}"
-        exit 1
-      end
-      if permissions.nil?
-        if (File.umask & 077) == 0
-          @permissions = '666'
-        elsif (File.umask & 070) == 0
-          @permissions = '660'
-        else
-          @permissions = "600"
-        end
-      end
     end
   end
 end
@@ -156,13 +142,13 @@ def handle_notifcation(category, action, message, vars)
 end
 
 begin
-  $lackey = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
+  $lackey_proc = DatalackeyProcess.new(arguments.lackey, arguments.directory, arguments.permissions, arguments.memory)
 rescue ArgumentError => e
   puts e.to_s
   exit 1
 end
-stderr_discarder = DiscardReader.new($lackey.stderr)
-$lackey_io = DatalackeyIO.new($lackey.stdin, $lackey.stdout,
+stderr_discarder = DiscardReader.new($lackey_proc.stderr)
+$lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
   Proc.new { |msgs| print_lines(msgs) },
   Proc.new do |category, action, message, vars|
     handle_notifcation(category, action, message, vars)
@@ -255,9 +241,9 @@ class Handler
       when :command
         cands = $handler.keys
       when :label
-        cands = $lackey_io.data.keys
+        cands = $lackey.data.keys
       when :process_id
-        cands = $lackey_io.process.keys
+        cands = $lackey.process.keys
       when :history_process_id
         cands = [] # Run command identifiers from history.
         scan_history([ Regexp.new('^run[[:blank:]]+') ]).each do |h|
@@ -331,9 +317,9 @@ class Handler
       when :command
         return pop_false(match, $handler.has_key?(part))
       when :label
-        return pop_false(match, $lackey_io.data.has_key?(part))
+        return pop_false(match, $lackey.data.has_key?(part))
       when :process_id
-        return pop_false(match, $lackey_io.process.has_key?(part))
+        return pop_false(match, $lackey.process.has_key?(part))
       when :history_process_id
         scan_history([ Regexp.new('^run[[:blank:]]+') ]).each do |h|
           pieces = h.shellsplit
@@ -438,11 +424,11 @@ class Handler
   end
 
   def send(patt_act, message, user_id = false)
-    $lackey_io.send(patt_act, message, user_id)
+    $lackey.send(patt_act, message, user_id)
   end
 
   def dump(json_as_string)
-    $lackey_io.dump(json_as_string)
+    $lackey.dump(json_as_string)
   end
 end
 
@@ -539,7 +525,7 @@ class ListHandler < Handler
     exps = []
     parts[1...parts.length].sort.uniq.each { |e| exps.push Regexp.new(e) }
     matching = []
-    $lackey_io.data.keys.sort.each do |label|
+    $lackey.data.keys.sort.each do |label|
       match = exps.length == 0
       exps.each do |e|
         match = e.match(label)
@@ -714,7 +700,7 @@ class VersionHandler < Handler
 
   def handle(parts)
     vs = [ "shell: #{$version}" ]
-    $lackey_io.version.each_pair { |k, v| vs.push "#{k}: #{v}" }
+    $lackey.version.each_pair { |k, v| vs.push "#{k}: #{v}" }
     vs.sort!
     print_lines vs
   end
@@ -1298,7 +1284,7 @@ class PsHandler < Handler
 
   def handle(parts)
     report = [ " PID\t: Identifier" ]
-    procs = $lackey_io.process
+    procs = $lackey.process
     procs.keys.sort.each { |id| report.push " #{procs[id]}\t: #{id}" }
     print_lines report
   end
@@ -1433,8 +1419,8 @@ def completer(str)
   rescue NotImplementedError
     # No context available so just pick matching words.
     cands = $handler.keys.grep(/^#{Regexp.escape(str)}/)
-    cands.concat $lackey_io.data.keys.grep(/^#{Regexp.escape(str)}/)
-    cands.concat $lackey_io.process.keys.grep(/^#{Regexp.escape(str)}/)
+    cands.concat $lackey.data.keys.grep(/^#{Regexp.escape(str)}/)
+    cands.concat $lackey.process.keys.grep(/^#{Regexp.escape(str)}/)
     # Should add various words from syntax. Basically scan for strings.
     cands.sort!
     return cands
@@ -1515,10 +1501,10 @@ if $stdin.tty?
   end
 end
 
-$lackey.finish
-$lackey_io.close
+$lackey_proc.finish
+$lackey.close
 stderr_discarder.close
-$lackey_io.finish
+$lackey.finish
 puts() unless $exit_handler.exiting
-puts("datalackey exit status: #{$lackey.exit_code}") if $lackey.exit_code != 0
+puts("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
 exit $exit_handler.code

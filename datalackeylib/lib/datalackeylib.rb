@@ -33,6 +33,48 @@ class DatalackeyProcess
   end
 end
 
+def DatalackeyProcess.verify_memory_directory_permissions(
+    memory, directory, permissions)
+  if not memory.nil? and not (directory.nil? and permissions.nil?)
+    raise ArgumentError.new "Cannot use both memory and directory/permissions."
+  end
+  if memory.nil?
+    if directory.nil?
+      directory = Dir.pwd
+    elsif not Dir.exist? directory
+      raise ArgumentError.new "Given directory does not exist: #{directory}"
+    end
+    if permissions.nil?
+      if (File.umask & 077) == 0
+        permissions = '666'
+      elsif (File.umask & 070) == 0
+        permissions = '660'
+      else
+        permissions = "600"
+      end
+    elsif permissions != '600' and permission != '660' and permissions != '666'
+      raise ArgumentError.new "Permissions not in {600, 660, 666}."
+    end
+  end
+  return memory, directory, permissions
+end
+
+
+class DatalackeyParentProcess
+  attr_reader :exit_code, :stdout, :stderr, :stdin, :executable
+
+  def initialize(to_lackey, from_lackey)
+    @exit_code = 0
+    @stdout = from_lackey
+    @stdin = to_lackey
+    @stderr = nil
+    @executable = nil
+  end
+
+  def finish
+    @stdin.close
+  end
+end
 
 CategoryAction = Struct.new(:category, :action)
 
@@ -425,6 +467,7 @@ end
 class DiscardReader
   def initialize(input)
     @input = input
+    return if input.nil?
     @reader = Thread.new do
       while true do
         begin
@@ -438,6 +481,7 @@ class DiscardReader
   end
 
   def close
+    return if @input.nil?
     @input.close
     @reader.join
   end
