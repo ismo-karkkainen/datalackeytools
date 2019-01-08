@@ -10,7 +10,6 @@
 require 'optparse'
 require 'readline'
 require 'shellwords'
-require 'open3'
 require 'json'
 require 'yaml'
 require 'set'
@@ -67,9 +66,9 @@ class Arguments
     end
     parser.parse!(args)
     begin
-      @memory, @directory, @permissions =
-        DatalackeyProcess.verify_memory_directory_permissions(
-          @memory, @directory, @permissions)
+      @directory, @permissions, @memory =
+        DatalackeyProcess.verify_directory_permissions_memory(
+          @directory, @permissions, @memory)
     rescue ArgumentError => e
       STDERR.puts e.to_s
       exit 1
@@ -1162,18 +1161,13 @@ note:
 - run_error_input_failed: [ "@", run, error, input, failed ]
 - run_child_error_output_format: [ "@", run, error, format ]
 - run_child_error_output_format: [ "@", error, format ]
-bytes:
-- bytes: [ "@", run, bytes, "?", "*" ]
-)
-
-$actions_run_only = %q(
----
-note:
 - run_terminated: [ "@", run, terminated, "?" ]
 - run_exit: [ "@", run, exit, "?" ]
 - run_signal: [ "@", run, signal, "?" ]
 - run_stop: [ "@", run, stopped, "?" ]
 - run_continue: [ "@", run, continued ]
+bytes:
+- bytes: [ "@", run, bytes, "?", "*" ]
 )
 
 $actions_bgrun_only = %q(
@@ -1181,17 +1175,11 @@ $actions_bgrun_only = %q(
 return:
 - run_running: [ "@", run, running, "?" ]
 note:
-- run_terminated: [ "@", run, terminated, "?" ]
-- run_exit: [ "@", run, exit, "?" ]
-- run_signal: [ "@", run, signal, "?" ]
-- run_stop: [ "@", run, stopped, "?" ]
-- run_continue: [ "@", run, continued ]
 - run_closed: [ "@", run, input, closed ]
 )
 
 class RunHandler < Handler
   @@actions_run_common = YAML.load($actions_run_common)
-  @@actions_run_only = YAML.load($actions_run_only)
   @@actions_bgrun_only = YAML.load($actions_bgrun_only)
 
   def initialize
@@ -1230,7 +1218,7 @@ class RunHandler < Handler
       else []
       end
     end
-    @actions = PatternAction.new([ @@actions_run_only, @@actions_run_common ],
+    @actions = PatternAction.new([ @@actions_run_common ],
       [ run_only, run_common ])
     bgrun_only = Proc.new do |category, action, message, vars|
       case category.to_s

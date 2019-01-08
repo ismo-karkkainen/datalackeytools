@@ -1,4 +1,5 @@
 require 'json'
+require 'open3'
 
 
 class DatalackeyProcess
@@ -33,8 +34,8 @@ class DatalackeyProcess
   end
 end
 
-def DatalackeyProcess.verify_memory_directory_permissions(
-    memory, directory, permissions)
+def DatalackeyProcess.verify_directory_permissions_memory(
+    directory, permissions, memory)
   if not memory.nil? and not (directory.nil? and permissions.nil?)
     raise ArgumentError.new "Cannot use both memory and directory/permissions."
   end
@@ -56,7 +57,7 @@ def DatalackeyProcess.verify_memory_directory_permissions(
       raise ArgumentError.new "Permissions not in {600, 660, 666}."
     end
   end
-  return memory, directory, permissions
+  return directory, permissions, memory
 end
 
 
@@ -108,7 +109,7 @@ class PatternAction
   attr_reader :identifier
   attr_accessor :exit, :command, :status, :generators
 
-  def initialize(action_maps_list, message_procs = [],
+  def initialize(action_maps_list, message_callables = [],
       identifier_placeholder = '@')
     @pattern2ca = { }
     @fixed2ca = { }
@@ -116,7 +117,7 @@ class PatternAction
     @exit = nil
     @command = nil
     @status = nil
-    @generators = message_procs.is_a?(Array) ? message_procs.clone : [ message_procs ]
+    @generators = message_callables.is_a?(Array) ? message_callables.clone : [ message_callables ]
     maps = action_maps_list.clone
     maps.push @@generic_map
     maps.each do |ca2p|
@@ -211,14 +212,14 @@ end
 class DatalackeyIO
   attr_reader :syntax, :version
 
-  def initialize(to_datalackey, from_datalackey, message_presenter_proc,
-      notification_proc = nil,
-      to_datalackey_echo_proc = nil, from_datalackey_echo_proc = nil)
+  def initialize(to_datalackey, from_datalackey, message_presenter_callable,
+      notification_callable = nil,
+      to_datalackey_echo_callable = nil, from_datalackey_echo_callable = nil)
     @to_datalackey_mutex = Mutex.new
     @to_datalackey = to_datalackey
-    @to_datalackey_echo = to_datalackey_echo_proc
+    @to_datalackey_echo = to_datalackey_echo_callable
     @from_datalackey = from_datalackey
-    @from_datalackey_echo = from_datalackey_echo_proc
+    @from_datalackey_echo = from_datalackey_echo_callable
     @identifier = 0
     @tracked_mutex = Mutex.new
     @tracked = { nil => PatternAction.new([], [], nil) }
@@ -302,9 +303,9 @@ class DatalackeyIO
                 next
               end
             end
-            unless notification_proc.nil?
+            unless notification_callable.nil?
               actionable.each do |item|
-                notification_proc.call(item.category, item.action, msg, vars)
+                notification_callable.call(item.category, item.action, msg, vars)
               end
             end
             next # Notifications have been sent, no generators in nil tracker.
@@ -319,7 +320,7 @@ class DatalackeyIO
             end
             msgs.concat ms
           end
-          message_presenter_proc.call(msgs) unless message_presenter_proc.nil?
+          message_presenter_callable.call(msgs) unless message_presenter_callable.nil?
           next if msg[0] != @waiting
           # Check if the waited command needs to be finished etc.
           finish = false
