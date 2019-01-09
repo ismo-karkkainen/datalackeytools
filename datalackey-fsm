@@ -9,6 +9,8 @@ require 'datalackeylib'
 $CMDOUT = STDOUT
 $USEROUT = STDERR
 $OVERWRITE_ACTION = nil
+$FOLLOW = 0
+$QUIET = false
 # For case when we run datalackey.
 $LACKEY = nil
 $MEMORY = nil
@@ -39,6 +41,12 @@ parser = OptionParser.new do |opts|
   end
   opts.on('--error', 'State overwriting is an error.') do
     $OVERWRITE_ACTION = :error
+  end
+  opts.on('-f', '--follow [LEVEL]', Integer, 'Print state/signal/command.') do |level|
+    $FOLLOW = level
+  end
+  opts.on('-q', '--quiet', 'Suppress normal command output.') do
+    $QUIET = true
   end
   # For case where this process runs datalackey.
   opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
@@ -120,7 +128,10 @@ class Machine
 
   def set_signal(sig)
     @signal_mutex.synchronize do
-      @signal = sig if @signal.nil? or sig == 'error'
+      if @signal.nil? or sig == 'error'
+        userout "Signal: #{sig}" if $FOLLOW > 0
+        @signal = sig
+      end
     end
   end
 
@@ -145,7 +156,9 @@ class Machine
     state[:commands].each do |cmd|
       info = []
       begin
+        userout "Command: #{cmd.to_s}" if $FOLLOW > 2
         expanded = expand(cmd, info)
+        userout "Expanded: #{expanded.to_s}" if $FOLLOW > 3
       rescue RuntimeError => e
         set_error e.to_s
         return
@@ -153,13 +166,16 @@ class Machine
       handler = nil
       if expanded.is_a? String
         handler = @commands[expanded]
+        userout "Command: #{expanded}" if $FOLLOW == 2
         set_error("Unknown command: #{expanded}") if handler.nil?
       elsif expanded.is_a? Array
         handler = @commands[expanded.first]
+        userout "Command: #{expanded.first}" if $FOLLOW == 2
         set_error("Unknown command: #{expanded.first}") if handler.nil?
       elsif expanded.is_a? Hash
         @commands.each_pair do |name, hndlr|
           if cmd.has_key? name # Registred names should be unique.
+            userout "Command: #{name}" if $FOLLOW == 2
             handler = hndlr
             break
           end
@@ -172,14 +188,16 @@ class Machine
   end
 
   def run(initial_state_name, states)
+    last_state_name = '__terminate_all'
     finalized = false
     name = initial_state_name
     while states.has_key? name
-      finalized = true if name == '__terminate_all'
+      finalized = true if name == last_state_name
       state = states[name]
       if state.has_key? 'global_signal2state'
         @signal2state = state['global_signal2state']
       end
+      userout "State: #{name}" if $FOLLOW > 0
       run_state(state)
       sig = wipe_signal
       if state.has_key?('signal2state') and state['signal2state'].has_key? sig
@@ -195,8 +213,9 @@ class Machine
         break
       end
     end
-    if not finalized and states.has_key? '__terminate_all'
-      run_state(states['__terminate_all'])
+    if not finalized and states.has_key? last_state_name
+      userout "State: #{last_state_name}" if $FOLLOW > 0
+      run_state(states[last_state_name])
     end
   end
 end
@@ -435,6 +454,7 @@ class PrintCommand < Command
   end
 
   def handle(cmd)
+    return if $QUIET
     userout cmd[1...cmd.length].join(' ')
   end
 end
