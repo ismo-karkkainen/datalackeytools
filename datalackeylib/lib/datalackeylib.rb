@@ -219,7 +219,6 @@ class DatalackeyIO
     @to_datalackey = to_datalackey
     @to_datalackey_echo = to_datalackey_echo_callable
     @from_datalackey = from_datalackey
-    @from_datalackey_echo = from_datalackey_echo_callable
     @identifier = 0
     @tracked_mutex = Mutex.new
     @tracked = { nil => PatternAction.new([], [], nil) }
@@ -247,7 +246,7 @@ class DatalackeyIO
           joined = accum.join
           accum.clear
           next if joined.empty?
-          @from_datalackey_echo.call(joined) unless @from_datalackey_echo.nil?
+          from_datalackey_echo_callable.call(joined) unless from_datalackey_echo_callable.nil?
           msg = JSON.parse joined
           # See if we are interested in it.
           tracker = @tracked_mutex.synchronize { @tracked[msg[0]] }

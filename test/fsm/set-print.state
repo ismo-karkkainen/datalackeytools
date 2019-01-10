@@ -1,0 +1,9 @@
+---
+- set-test-setup:
+  - set threelevel twolevel
+  - set twolevel onelevel
+  - set onelevel lvl1
+  signal2state:
+    null: set-test
+- set-test:
+  - print onelevel twolevel threelevel

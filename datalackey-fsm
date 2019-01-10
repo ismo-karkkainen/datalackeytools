@@ -16,10 +16,13 @@ $LACKEY = nil
 $MEMORY = nil
 $DIRECTORY = nil
 $PERMISSIONS = nil
+$ECHO = false
 
 root_dir = Dir.pwd
 
 parser = OptionParser.new do |opts|
+  opts.summary_indent = '  '
+  opts.summary_width = 26
   opts.banner = "Usage: datalackey-fsm [options] state-files..."
   opts.separator ""
   opts.separator "Options:"
@@ -27,7 +30,6 @@ parser = OptionParser.new do |opts|
     $USEROUT.puts opts
     exit 0
   end
-  # For case where this is beng run under datalackey.
   opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
     $CMDOUT = STDOUT
     $USEROUT = STDERR
@@ -36,6 +38,10 @@ parser = OptionParser.new do |opts|
     $CMDOUT = STDERR
     $USEROUT = STDOUT
   end
+  opts.on('-q', '--quiet', 'Suppress normal command output.') do
+    $QUIET = true
+  end
+  opts.separator 'Options for error checking and tracking execution:'
   opts.on('-w', '--warn', 'Print warning when state is overwritten.') do
     $OVERWRITE_ACTION = :warn
   end
@@ -45,10 +51,7 @@ parser = OptionParser.new do |opts|
   opts.on('-f', '--follow [LEVEL]', Integer, 'Print state/signal/command.') do |level|
     $FOLLOW = level
   end
-  opts.on('-q', '--quiet', 'Suppress normal command output.') do
-    $QUIET = true
-  end
-  # For case where this process runs datalackey.
+  opts.separator 'Options for case where this process runs datalackey:'
   opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
     $LACKEY = e
   end
@@ -58,8 +61,11 @@ parser = OptionParser.new do |opts|
     $DIRECTORY = d || ''
   end
   opts.on("-p", "--permissions MODE", [:user, :group, :other],
-      "Use permissions extended to (user, group, other) for files.") do |p|
+      "File permissions cover (user, group, other).") do |p|
     $PERMISSIONS = { :user => "600", :group => "660", :other => "666" }[p]
+  end
+  opts.on('--echo', 'Echo communication with datalackey.') do
+    $ECHO = true
   end
 end
 parser.parse!
@@ -71,23 +77,34 @@ end
 
 $userout_mutex = Mutex.new
 def userout(message)
-  $userout_mutex.synchronize { $USEROUT.puts message }
+  return if message.is_a?(Array) and message.empty?
+  message = [ message ] unless message.is_a? Array
+  $userout_mutex.synchronize do
+    message.each { |m| $USEROUT.puts m }
+  end
 end
 
 class Machine
   attr_accessor :variables
+  attr_reader :had_error
 
   def initialize
     @commands = Hash.new(nil)
+    @skip_expand = { }
     @signal_mutex = Mutex.new
     @signal = nil
-    @signal2state = { }
     @variables = Hash.new(nil)
+    @label2signal_mutex = Mutex.new
+    @label2signal = { }
   end
 
   def register(name, object)
     raise ArgumentError.new("Command name is not a string.") unless name.is_a? String
     @commands[name] = object
+  end
+
+  def expand_skip(name, count)
+    @skip_expand[name] = count
   end
 
   def get_binding
@@ -131,6 +148,7 @@ class Machine
       if @signal.nil? or sig == 'error'
         userout "Signal: #{sig}" if $FOLLOW > 0
         @signal = sig
+        @had_error = @signal == 'error'
       end
     end
   end
@@ -152,12 +170,19 @@ class Machine
     end
   end
 
-  def run_state(state)
+  def label2signal
+    @label2signal_mutex.synchronize { @label2signal }
+  end
+
+  def run_state(state, name)
+    userout "State: #{name}" if $FOLLOW > 0
     state[:commands].each do |cmd|
       info = []
       begin
         userout "Command: #{cmd.to_s}" if $FOLLOW > 2
-        expanded = expand(cmd, info)
+        skip = @skip_expand.fetch(cmd.first, 0)
+        expanded = cmd[0...skip]
+        expanded.concat expand(cmd[skip...cmd.length], info)
         userout "Expanded: #{expanded.to_s}" if $FOLLOW > 3
       rescue RuntimeError => e
         set_error e.to_s
@@ -191,31 +216,28 @@ class Machine
     last_state_name = '__terminate_all'
     finalized = false
     name = initial_state_name
+    signal2state = { } # Only changes when state has new global mapping.
     while states.has_key? name
       finalized = true if name == last_state_name
       state = states[name]
-      if state.has_key? 'global_signal2state'
-        @signal2state = state['global_signal2state']
+      signal2state = state.fetch('global_signal2state', signal2state)
+      @label2signal_mutex.synchronize do
+        @label2signal = state.fetch('label2signal', { })
       end
-      userout "State: #{name}" if $FOLLOW > 0
-      run_state(state)
+      run_state(state, name)
+      @label2signal_mutex.synchronize { @label2signal = { } }
       sig = wipe_signal
-      if state.has_key?('signal2state') and state['signal2state'].has_key? sig
-        name = state['signal2state'][sig]
-      elsif @signal2state.has_key? sig
-        name = @signal2state[sig]
-      else
-        name = nil
-      end
+      name = state.fetch('signal2state', { }).fetch(sig, nil)
+      name = signal2state.fetch(sig, nil) if name.nil?
       break if name.nil?
       unless states.has_key? name
         userout "Transition to unknown state: #{name}"
         break
       end
+      userout($lackey_stderr.readlines) unless $QUIET
     end
     if not finalized and states.has_key? last_state_name
-      userout "State: #{last_state_name}" if $FOLLOW > 0
-      run_state(states[last_state_name])
+      run_state(states[last_state_name], last_state_name)
     end
   end
 end
@@ -238,6 +260,7 @@ class Command
   end
 
   def handle(cmd)
+    cmd.flatten!
     $lackey.send(@action, cmd)
   end
 end
@@ -247,6 +270,7 @@ end
 class SetCommand < Command
   def initialize
     super('set')
+    $machine.expand_skip('set', 2)
   end
 
   def handle(cmd)
@@ -314,6 +338,13 @@ bytes:
     end
     return out
   end
+
+  def handle(cmd)
+    t = cmd[0] # Swap command and user-given identifier.
+    cmd[0] = cmd[1]
+    cmd[1] = t
+    $lackey.send(@action, cmd, true)
+  end
 end
 
 class RunCommand < RunBase
@@ -324,6 +355,7 @@ class RunCommand < RunBase
   end
 
   def handle(cmd)
+    cmd.flatten!
     unless cmd.include? 'end-feed'
       c = cmd[0...2]
       c.push 'end-feed'
@@ -344,11 +376,13 @@ class LaunchCommand < RunBase
   def initialize
     super('launch')
     @action = PatternAction.new([
-      { 'return' => [{ 'run' => [ '@', 'run', 'running', '?' ] }] },
+      { 'return' => [{ 'run' => [ '@', 'run', 'running', '?' ] }],
+        'error' => [{ 'term' => [ '@', 'run', 'terminated', '?' ] }]},
       @@actions_run_common ], [ @msgmaker, $signal_sender ])
   end
 
   def handle(cmd)
+    cmd.flatten!
     cmd[0] = 'run'
     super(cmd)
   end
@@ -363,9 +397,9 @@ class ProcessCommand < Command
   end
 
   def handle(cmd)
-    if cmd.length == 1
-      $lackey.process.each_key { |k| cmd.push k }
-    end
+    cmd.flatten!
+    cmd.concat($lackey.process.keys) if cmd.length == 1
+    userout(cmd.to_s) if $FOLLOW > 4
     super(cmd)
   end
 end
@@ -374,6 +408,12 @@ end
 class CloseCommand < ProcessCommand
   def initialize
     super('close')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd[0] = 'end-feed'
+    super(cmd)
   end
 end
 CloseCommand.new
@@ -398,12 +438,13 @@ end
 FeedCommand.new
 
 # List of wait, timeout in seconds and optional process identifiers to quit.
-class WaitCommand < Command
+class WaitProcessCommand < Command
   def initialize
-    super('wait')
+    super('wait_process')
   end
 
   def handle(cmd)
+    cmd.flatten!
     begin
       deadline = Time.new + Float(cmd[1])
     rescue ArgumentError
@@ -412,11 +453,41 @@ class WaitCommand < Command
     end
     waited = (cmd.length > 2) ? cmd[2...cmd.length] : $lackey.process.keys
     while (Time.new <=> deadline) == -1
-      sleep(0.1)
+      sleep(0.2)
       remains = false
       current = $lackey.process.keys
       waited.each { |id| remains = (remains or current.include? id) }
       return unless remains
+    end
+  end
+end
+WaitProcessCommand.new
+
+class WaitDataCommand < Command
+  def initialize
+    super('wait_data')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    unseen = cmd[1...cmd.length]
+    while not unseen.empty?
+      data = $lackey.data
+      unseen.delete_if { |u| data.has_key? u }
+      sleep(0.2) unless unseen.empty?
+    end
+  end
+end
+WaitDataCommand.new
+
+class WaitCommand < Command
+  def initialize
+    super('wait_signal')
+  end
+
+  def handle(cmd)
+    while $machine.get_signal.nil?
+      sleep(0.2)
     end
   end
 end
@@ -455,7 +526,15 @@ class PrintCommand < Command
 
   def handle(cmd)
     return if $QUIET
-    userout cmd[1...cmd.length].join(' ')
+    # Array containing arrays will be treated as multi-line output.
+    cmd.shift
+    multi = false
+    cmd.each_index do |k|
+      next unless cmd[k].is_a? Array
+      multi = true
+      cmd[k] = cmd[k].flatten.join(' ')
+    end
+    userout cmd.join(multi ? '\n' : ' ')
   end
 end
 PrintCommand.new
@@ -495,8 +574,19 @@ class ShellCommand < Command
       temp.puts script
       temp.close
       argv.prepend temp.path
+    rescue StandardError => e
+      $machine.set_error("Shell script prepare exception:\n#{e.to_s}")
+      temp.close!
+      return
+    end
+    wait = nil
+    stdin = nil
+    rd_out = nil
+    rd_err = nil
+    begin
       # Run script with arguments.
       stdin, stdout, stderr, wait = Open3.popen(*argv)
+      temp.unlink
       rd_out = vout.nil? ? DiscardReader.new(stdout) : StoringReader.new(stdout)
       rd_err = verr.nil? ? DiscardReader.new(stderr) : StoringReader.new(stderr)
       stdin.puts(vin) unless vin.nil?
@@ -505,8 +595,15 @@ class ShellCommand < Command
       $machine.variables[vout] = rd_out.readlines.join('\n') unless vout.nil?
       $machine.variables[verr] = rd_err.readlines.join('\n') unless verr.nil?
       exitcode = wait.value.exitstatus
+      wait = nil
       $machine.set_error("Shell exit: #{exitcode}") if exitcode != 0
+    rescue StandardError => e
+      $machine.set_error("Shell run exception:\n#{e.to_s}")
     ensure
+      stdin.close unless stdin.nil?
+      rd_out.close unless rd_out.nil?
+      rd_err.close unless rd_err.nil?
+      wait.join unless wait.nil?
       temp.close!
     end
   end
@@ -519,29 +616,15 @@ class RubyCommand < Command
   end
 
   def handle(cmd)
-    # If variable substitution is needed, the varibles need to be full strings.
+    # Access to variables via @variables in binding.
     script = cmd['ruby']
     script = script.join('\n') if script.is_a? Array
     if not eval(script, $machine.get_binding)
-      # Unmodified script is visible in state files and modified here.
       $machine.set_error "Eval failed: #{script}"
     end
   end
 end
 RubyCommand.new
-
-class WaitSignalCommand < Command
-  def initialize
-    super('wait_signal')
-  end
-
-  def handle(cmd)
-    while $machine.get_signal.nil?
-      sleep(0.1)
-    end
-  end
-end
-WaitSignalCommand.new
 
 # Load and parse all state files here.
 
@@ -560,7 +643,7 @@ $built_ins = { '__setup' => %q(
 ---
 - __terminate_all:
   - close
-  - wait terminate_delay
+  - wait_process terminate_delay
   - terminate
   comment: "Default termination, close feeds, terminate all after 5 seconds."
 - __setup:
@@ -578,7 +661,7 @@ $built_ins = { '__setup' => %q(
 
 $first_state = nil
 
-def load_statefile(filename, current_directory)
+def load_statefile(filename, current_directory, parent_includes = [])
   if $built_ins.has_key? filename
     fullname = filename
     contents = YAML.load($built_ins[filename])
@@ -588,13 +671,19 @@ def load_statefile(filename, current_directory)
       fullname = File.realpath(filename, current_directory)
       contents = YAML.load(File.read(fullname))
       directory = File.dirname(fullname)
-    rescue Errno::ENOENT
+    rescue Errno::ENOENT => e
+      userout e.to_s
       userout "Could not find #{filename} from #{current_directory}"
       return nil
-    rescue StandardError
+    rescue StandardError => e
+      userout e.to_s
       userout "Failed to read #{filename} from #{current_directory}"
       return nil
     end
+  end
+  if parent_includes.include? fullname
+    userout "Include loop: #{filename} from #{current_directory}"
+    return nil
   end
   unless contents.is_a? Array
     userout "Not a top level array: #{filename} from #{current_directory}"
@@ -620,7 +709,13 @@ def load_statefile(filename, current_directory)
     if include_name.nil?
       # Separate each state while keeping common parts.
       item.each_pair do |state, commands|
-        $first_state = state if $first_state.nil?
+        if $first_state.nil?
+          $first_state = state
+          if item.length != 1
+            userout "First state mapping with multiple states is ambiguous: #{fullname} : #{index}"
+            return nil
+          end
+        end
         commands.each_index do |k|
           commands[k] = commands[k].split(' ') if commands[k].is_a? String
         end
@@ -629,7 +724,9 @@ def load_statefile(filename, current_directory)
         add_states(states, { state => separated })
       end
     else
-      included = load_statefile(include_name, directory)
+      previous_includes.push fullname
+      included = load_statefile(include_name, directory, previous_includes)
+      previous_includes.pop
       if included.nil?
         userout " .. #{fullname} : #{index}"
         return nil
@@ -662,10 +759,23 @@ unless states['__setup']['signal2state'].has_key? nil
   states['__setup']['signal2state'][nil] = $first_state
 end
 
-# State has
-# - label to signal mapping
-# Output mapping independent of run command for multi-feed programs? State?
 
+def label_signal_check(category, action, message, vars)
+  case category
+  when 'internal'
+    case action
+    when 'stored'
+      if $machine.label2signal.has_key? vars.first
+        $machine.set_signal $machine.label2signal[vars.first]
+      end
+    when 'data_error'
+      $machine.set_error(message.to_s)
+    end
+  when 'internal_error'
+    $machine.set_error(message.to_s)
+  end
+end
+sig_check = Proc.new { |ct, act, msg, vs| label_signal_check(ct, act, msg, vs) }
 
 if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
   # Running under datalackey.
@@ -677,7 +787,7 @@ if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
   $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
   $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
   $lackey = DatalackeyIO.new(
-    $lackey_proc.stdin, $lackey_proc.stdout, nil)
+    $lackey_proc.stdin, $lackey_proc.stdout, nil, sig_check)
 else
   begin
     $DIRECTORY, $PERMISSIONS, $MEMORY =
@@ -690,15 +800,18 @@ else
     exit 1
   end
   $lackey_stderr = StoringReader.new($lackey_proc.stderr)
+  echo = $ECHO ? Proc.new { |json| userout json } : nil
   $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
-    Proc.new { |msgs| msgs.each { |m| userout m } })
+    $QUIET ? nil : Proc.new { |msgs| msgs.each { |m| userout m } }, sig_check,
+    echo, echo)
 end
 
 $machine.run('__setup', states)
+userout $lackey_stderr.readlines
 
 $lackey_proc.finish
 $lackey.close
 $lackey_stderr.close
 $lackey.finish
 userout("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
-exit 
+exit $machine.variables.fetch('__exitcode', $machine.had_error ? 1 : 0)

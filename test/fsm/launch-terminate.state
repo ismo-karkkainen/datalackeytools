@@ -1,0 +1,3 @@
+---
+- launch-test:
+  - launch sleeper program /bin/sleep 10

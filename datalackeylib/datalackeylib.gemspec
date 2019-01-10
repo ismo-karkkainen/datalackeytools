@@ -1,9 +1,13 @@
 Gem::Specification.new do |s|
   s.name        = 'datalackeylib'
   s.version     = '0.0.1'
-  s.date        = '2019-01-02'
+  s.date        = '2019-01-10'
   s.summary     = "Classes and methods for using datalackey."
-  s.description = "Classes and methods for using datalackey."
+  s.description = %q(
+Classes and methods for using datalackey from Ruby programs.
+Requires separately installed datalackey executable, installed into
+/usr/local/libexec, /usr/libexec, or into a directory in $PATH.
+)
   s.authors     = [ "Ismo Kärkkäinen" ]
   s.email       = 'ismokarkkainen@icloud.com'
   s.files       = [ "lib/datalackeylib.rb" ]
