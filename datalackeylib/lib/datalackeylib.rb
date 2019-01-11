@@ -7,13 +7,8 @@ class DatalackeyProcess
 
   def initialize(exe, directory, permissions, memory)
     if exe.nil?
-      dirs = [ '/usr/local/libexec', '/usr/libexec' ]
-      dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
-      dirs.each do |d|
-        exe = File.join(d, "datalackey")
-        break if File.exist?(exe) and File.executable?(exe)
-        exe = nil
-      end
+      exe = DatalackeyProcess.locate_executable(
+        'datalackey', [ '/usr/local/libexec', '/usr/libexec' ])
       raise ArgumentError.new('datalackey not found') if exe.nil?
     elsif not File.exist?(exe) or not File.executable?(exe)
       raise ArgumentError.new("Executable not found or not executable: #{exe}")
@@ -32,6 +27,20 @@ class DatalackeyProcess
     @wait_thread.join
     @exit_code = @wait_thread.value.exitstatus
   end
+end
+
+def DatalackeyProcess.locate_executable(exe_name, dirs_outside_path = [])
+  # Absolute file name or found in current working directory.
+  return exe_name if File.exist?(exe_name) and File.executable?(exe_name)
+  dirs = []
+  dirs_outside_path = [ dirs_outside_path ] unless dirs_outside_path.is_a? Array
+  dirs.concat dirs_outside_path
+  dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
+  dirs.each do |d|
+    exe = File.join(d, exe_name)
+    return exe if File.exist?(exe) and File.executable?(exe)
+  end
+  return nil
 end
 
 def DatalackeyProcess.verify_directory_permissions_memory(

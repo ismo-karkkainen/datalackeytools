@@ -1,3 +1,3 @@
 ---
 - run-test:
-  - run sleeper program /bin/sleep 1
+  - run sleeper program sleep 1

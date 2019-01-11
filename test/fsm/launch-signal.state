@@ -1,0 +1,4 @@
+---
+- launch-signal:
+  - [ launch, failing, program, sh, "-c", "sleep 1; exit 2" ]
+  - wait_signal

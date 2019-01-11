@@ -1,3 +1,4 @@
 ---
 - launch-test:
-  - launch sleeper program /bin/sleep 10
+  - launch sleeper program sleep 10
+  - set terminate_delay 2

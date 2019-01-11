@@ -35,7 +35,10 @@ else
     cat > $CMDS << EOF
 $FSM -m --stderr -f 4 fsm/set-print.state
 $FSM -m --stderr -f 5 fsm/run-exit.state
+$FSM -m --stderr -f 5 fsm/launch-signal.state
 $FSM -m --stderr -f 5 fsm/launch-terminate.state
+$FSM -m --stderr -f 5 fsm/launch-wait.state
+$FSM -m --stderr -f 5 fsm/feed-test.state
 EOF
 fi
 
@@ -60,9 +63,9 @@ do
     echo "$R $B"
     echo "####CODE $R" >> $RESULTS
     echo "####OUT" >> $RESULTS
-    cat $$.out >> $RESULTS
+    cat $$.out | sed "s#$(pwd)/##" >> $RESULTS
     echo "####ERR" >> $RESULTS
-    cat $$.err >> $RESULTS
+    cat $$.err | sed "s#$(pwd)/##" >> $RESULTS
     rm -f $$.out $$.err
 done
 
