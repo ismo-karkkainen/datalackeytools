@@ -39,6 +39,8 @@ $FSM -m --stderr -f 5 fsm/launch-signal.state
 $FSM -m --stderr -f 5 fsm/launch-terminate.state
 $FSM -m --stderr -f 5 fsm/launch-wait.state
 $FSM -m --stderr -f 5 fsm/feed-test.state
+$FSM -m --stderr -f 4 fsm/ruby.state
+$FSM -m --stderr -f 4 fsm/shell.state
 EOF
 fi
 

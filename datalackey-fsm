@@ -3,6 +3,7 @@
 require 'optparse'
 require 'yaml'
 require 'json'
+require 'tempfile'
 require 'datalackeylib'
 
 
@@ -181,9 +182,16 @@ class Machine
       info = []
       begin
         userout "Command: #{cmd.to_s}" if $FOLLOW > 2
-        skip = @skip_expand.fetch(cmd.first, 0)
-        expanded = cmd[0...skip]
-        expanded.concat expand(cmd[skip...cmd.length], info)
+        if cmd.is_a? Hash
+          expanded = expand(cmd, info)
+        else
+          skip = @skip_expand.fetch(cmd.first, 0)
+          skip = cmd.length if cmd.length < skip
+          expanded = cmd[0...skip]
+          rest = cmd[skip...cmd.length]
+          rest = [ rest ] unless rest.is_a? Array
+          expanded.concat expand(rest, info)
+        end
         userout "Expanded: #{expanded.to_s}" if $FOLLOW > 3
       rescue RuntimeError => e
         set_error e.to_s
@@ -210,6 +218,7 @@ class Machine
       end
       break if handler.nil? or not get_signal.nil?
       handler.handle(expanded)
+      break unless get_signal.nil? # Prevents follow-output for next command.
     end
   end
 
@@ -281,6 +290,36 @@ class SetCommand < Command
   end
 end
 SetCommand.new
+
+class UnsetCommand < Command
+  def initialize
+    super('unset')
+    $machine.expand_skip('set', 1000000)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    cmd.each { |name| $machine.variables.delete name }
+  end
+end
+UnsetCommand.new
+
+class IsSetCommand < Command
+  def initialize
+    super('is_set')
+    $machine.expand_skip('set', 1000000) # Variable names must not be expanded.
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    unset = []
+    cmd.each { |name| unset.push(name) unless $machine.variables.has_key? name }
+    $machine.set_error("Not set: #{unset.join('\n')}") unless unset.empty?
+  end
+end
+IsSetCommand.new
 
 class RunBase < Command
   @@actions_run_common = YAML.load(%q(
@@ -416,12 +455,12 @@ class CloseCommand < ProcessCommand
 end
 CloseCommand.new
 
-class KillCommand < ProcessCommand
+class TerminateCommand < ProcessCommand
   def initialize
     super('terminate')
   end
 end
-KillCommand.new
+TerminateCommand.new
 
 class FeedCommand < Command
   def initialize
@@ -565,9 +604,11 @@ class ShellCommand < Command
 
   def handle(cmd)
     # Get interpreter and check that it exists.
+    cmd.delete 'comment'
     argv = cmd.fetch('argv', [])
     cmd.delete 'argv'
     script = cmd['script'] # Pre-requisite for getting this far, exists.
+    cmd.delete 'script'
     vout = cmd.fetch('stdout', nil)
     cmd.delete 'stdout'
     verr = cmd.fetch('stderr', nil)
@@ -575,7 +616,7 @@ class ShellCommand < Command
     vin = cmd.fetch('stdin', nil)
     cmd.delete 'stdin'
     if cmd.length != 1
-      $machine.set_error "Multiple interpreter candidates."
+      $machine.set_error "Multiple interpreters: #{cmd.keys.sort.join(' ')}"
       return
     end
     interpreter = cmd.keys.first
@@ -586,10 +627,11 @@ class ShellCommand < Command
       return
     end
     # Write script into a temporary file.
-    temp = Tempfile.new('fsm', Dir.tmpdir, :mode => 0700)
+    temp = Tempfile.new('fsm', Dir.tmpdir)
     begin
       temp.puts "#!#{interpreter} #{hashbangargs}"
       temp.puts script
+      temp.chmod(0700)
       temp.close
       argv.prepend temp.path
     rescue StandardError => e
@@ -603,8 +645,7 @@ class ShellCommand < Command
     rd_err = nil
     begin
       # Run script with arguments.
-      stdin, stdout, stderr, wait = Open3.popen(*argv)
-      temp.unlink
+      stdin, stdout, stderr, wait = Open3.popen3(*argv)
       rd_out = vout.nil? ? DiscardReader.new(stdout) : StoringReader.new(stdout)
       rd_err = verr.nil? ? DiscardReader.new(stderr) : StoringReader.new(stderr)
       stdin.puts(vin) unless vin.nil?

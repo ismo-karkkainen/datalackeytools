@@ -1,0 +1,11 @@
+---
+- ruby-test:
+  - set onevar value1
+  - set twovar value2
+  - ruby: |
+      lines = []
+      $machine.variables.keys.sort.each do |key|
+        next unless key == 'onevar' or key == 'twovar'
+        lines.push "#{key} => #{$machine.variables[key].to_s}"
+      end
+      userout lines

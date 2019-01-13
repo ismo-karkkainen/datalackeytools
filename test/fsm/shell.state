@@ -1,0 +1,32 @@
+---
+- shell-test:
+  - 
+    - set
+    - shellscript
+    - |
+      echo "To stdout"
+      echo "To stderr" >&2
+      echo $*
+      exit 0
+  - argv: [ arg1, arg2 ]
+    stdout: stdout-receiving-variable
+    stderr: stderr-receiving-variable
+    /bin/sh: ""
+    script: shellscript
+  - print StdOut stdout-receiving-variable
+  - print StdErr stderr-receiving-variable
+  - unset stdout-receiving-variable stderr-receiving-variable
+  - argv: [ arg1, arg2 ]
+    /bin/sh: ""
+    script: shellscript
+  - print StdOut stdout-receiving-variable
+  - print StdErr stderr-receiving-variable
+  - unset stdout-receiving-variable stderr-receiving-variable
+  - argv: [ arg1, arg2 ]
+    /bin/sh: ""
+    script: |
+      echo "To stdout"
+      echo "To stderr" >&2
+      echo $*
+      exit 1
+  - print We never get here because of exit code.
