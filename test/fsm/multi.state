@@ -1,0 +1,19 @@
+---
+- state1:
+  - print first
+  signal2state:
+    null: state2
+- state2:
+  - is_set causes_error
+  error:
+  - print got an error
+  - signal loop-prevention
+  ok:
+  - print all ok
+  - signal loop-prevention
+  signal2state:
+    null: ok
+    error: error
+    loop-prevention: normal
+- normal:
+  - print Outside multi-state

@@ -1,0 +1,8 @@
+---
+- startup:
+  - set ignored ignored-value-set
+  include: included-overwriter.state
+- verify:
+  - print overwriter
+  - print ignored
+ 

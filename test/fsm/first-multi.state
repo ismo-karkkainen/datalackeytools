@@ -1,0 +1,5 @@
+---
+- state1:
+  - print causes
+  state2:
+  - print trouble

@@ -1,0 +1,5 @@
+---
+- startup:
+  - set overwriter overwriter-value-set
+  signal2state:
+    null: verify

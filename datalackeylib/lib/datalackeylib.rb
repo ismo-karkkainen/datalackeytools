@@ -324,9 +324,13 @@ class DatalackeyIO
             ms = []
             tracker.generators.each do |p|
               ms = p.call(item.category, item.action, msg, vars)
-              break unless ms.empty?
+              break unless ms.nil? or ms.empty?
             end
-            msgs.concat ms
+            if ms.is_a? Array
+              msgs.concat ms
+            elsif not ms.nil?
+              msgs.push ms
+            end
           end
           message_presenter_callable.call(msgs) unless message_presenter_callable.nil?
           next if msg[0] != @waiting

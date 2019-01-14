@@ -1,0 +1,5 @@
+---
+- test:
+  - set exists
+  - is_set exists
+  - is_set not_set

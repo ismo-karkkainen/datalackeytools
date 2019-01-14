@@ -256,12 +256,11 @@ $machine = Machine.new
 $signal_sender = Proc.new do |category, action, message, vars|
   case category
   when 'error'
-    $machine.set_signal('error')
-    [ message.join(' ') ]
+    $machine.set_error(message.join(' '))
   when 'exit'
-    $machine.set_signal('error') if action == 'code' and vars.first != 0
-    [ message.join(' ') ]
-  else []
+    if action == 'code' and vars.first != 0
+      $machine.set_error(message.join(' '))
+    end
   end
 end
 
@@ -527,6 +526,18 @@ class WaitSignalCommand < Command
 end
 WaitSignalCommand.new
 
+class SignalCommand < Command
+  def initialize
+    super('signal')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    $machine.set_signal(cmd[1])
+  end
+end
+SignalCommand.new
+
 class DeleteCommand < Command
   def initialize
     super('delete')
@@ -678,8 +689,10 @@ class RubyCommand < Command
     # Access to variables via @variables in binding.
     script = cmd['ruby']
     script = script.join('\n') if script.is_a? Array
-    if not eval(script, $machine.get_binding)
-      $machine.set_error "Eval failed: #{script}"
+    begin
+      eval(script, $machine.get_binding)
+    rescue StandardError => e
+      $machine.set_error "Eval failed: #{e.to_s}"
     end
   end
 end
@@ -782,9 +795,9 @@ def load_statefile(filename, current_directory, parent_includes = [])
         add_states(states, { state => separated })
       end
     else
-      previous_includes.push fullname
-      included = load_statefile(include_name, directory, previous_includes)
-      previous_includes.pop
+      parent_includes.push fullname
+      included = load_statefile(include_name, directory, parent_includes)
+      parent_includes.pop
       if included.nil?
         userout " .. #{fullname} : #{index}"
         return nil

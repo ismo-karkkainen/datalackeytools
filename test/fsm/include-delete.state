@@ -1,0 +1,12 @@
+---
+- startup:
+  - [ launch, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
+  - wait_data label
+  signal2state:
+    null: rename-test
+- include: included-rename.state
+- delete-test:
+  - delete new_name
+  - run delay program sleep 1
+  - ruby: userout $lackey.data.keys.sort.join(' ')
+  - ruby: $machine.set_error('Found.') if $lackey.data.has_key? 'new_name'
