@@ -4,7 +4,7 @@
   signal2state:
     null: state2
 - state2:
-  - is_set causes_error
+  - assert_var causes_error
   error:
   - print got an error
   - signal loop-prevention

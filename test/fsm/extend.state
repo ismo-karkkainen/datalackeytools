@@ -1,0 +1,16 @@
+---
+- initial:
+  - ruby: |
+      handler = Command.new('extension')
+      handler_meta = class << handler; self; end
+      handler_meta.send(:define_method, :handle) do |cmd|
+        cmd.flatten!
+        if cmd.length == 1
+          userout "No parameters."
+          return
+        end
+        userout "Extension: #{cmd[1...cmd.length].join(' ')}"
+      end
+  - [ print, "Now using the new method." ]
+  - extension
+  - extension with parameters

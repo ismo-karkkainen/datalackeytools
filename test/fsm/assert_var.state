@@ -1,0 +1,5 @@
+---
+- test:
+  - set exists
+  - assert_var exists
+  - assert_var not_set

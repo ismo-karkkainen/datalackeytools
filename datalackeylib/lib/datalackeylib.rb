@@ -221,8 +221,7 @@ end
 class DatalackeyIO
   attr_reader :syntax, :version
 
-  def initialize(to_datalackey, from_datalackey, message_presenter_callable,
-      notification_callable = nil,
+  def initialize(to_datalackey, from_datalackey, notification_callable = nil,
       to_datalackey_echo_callable = nil, from_datalackey_echo_callable = nil)
     @to_datalackey_mutex = Mutex.new
     @to_datalackey = to_datalackey
@@ -311,28 +310,18 @@ class DatalackeyIO
                 next
               end
             end
-            unless notification_callable.nil?
-              actionable.each do |item|
-                notification_callable.call(item.category, item.action, msg, vars)
-              end
+            next if notification_callable.nil?
+            actionable.each do |item|
+              notification_callable.call(item.category, item.action, msg, vars)
             end
             next # Notifications have been sent, no generators in nil tracker.
           end
-          # Generate messages.
-          msgs = []
+          # Pass items through message generators.
           ca.each do |item|
-            ms = []
             tracker.generators.each do |p|
-              ms = p.call(item.category, item.action, msg, vars)
-              break unless ms.nil? or ms.empty?
-            end
-            if ms.is_a? Array
-              msgs.concat ms
-            elsif not ms.nil?
-              msgs.push ms
+              break if p.call(item.category, item.action, msg, vars)
             end
           end
-          message_presenter_callable.call(msgs) unless message_presenter_callable.nil?
           next if msg[0] != @waiting
           # Check if the waited command needs to be finished etc.
           finish = false
@@ -365,6 +354,7 @@ class DatalackeyIO
       @from_datalackey.close
       @return_mutex.synchronize { @return_condition.signal }
     end
+    # Outside thread block.
     send(PatternAction.new([]), ['version'])
   end
 
@@ -441,6 +431,8 @@ class StoringReader
       while true do
         begin
           raw = @input.readpartial(32768)
+        rescue IOError
+          break # It is possible that close happens in another thread.
         rescue EOFError
           break
         end
@@ -458,7 +450,6 @@ class StoringReader
         end
         accum.push(raw) if raw.length > 0
       end
-      @input.close
     end
   end
 
@@ -485,11 +476,12 @@ class DiscardReader
       while true do
         begin
           @input.readpartial(32768)
+        rescue IOError
+          break # It is possible that close happens in another thread.
         rescue EOFError
           break
         end
       end
-      @input.close
     end
   end
 

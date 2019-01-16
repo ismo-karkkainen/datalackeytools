@@ -78,11 +78,12 @@ end
 
 $userout_mutex = Mutex.new
 def userout(message)
-  return if message.is_a?(Array) and message.empty?
+  return false if message.is_a?(Array) and message.empty?
   message = [ message ] unless message.is_a? Array
   $userout_mutex.synchronize do
     message.each { |m| $USEROUT.puts m }
   end
+  return true
 end
 
 class Machine
@@ -97,6 +98,7 @@ class Machine
     @variables = Hash.new(nil)
     @label2signal_mutex = Mutex.new
     @label2signal = { }
+    @state = nil
   end
 
   def register(name, object)
@@ -150,8 +152,10 @@ class Machine
         userout "Signal: #{sig}" if $FOLLOW > 0
         @signal = sig
         @had_error = @signal == 'error'
+        return true
       end
     end
+    return false
   end
 
   def set_error(message)
@@ -175,13 +179,18 @@ class Machine
     @label2signal_mutex.synchronize { @label2signal }
   end
 
+  def state_source
+    return @state.nil? ? nil : @state.fetch(:load, { }).fetch(:source, nil)
+  end
+
   def run_state(state, name)
     userout "State: #{name}" if $FOLLOW > 0
     @state = state # Command may need e.g. the location of the state file.
     state[:commands].each do |cmd|
       info = []
       begin
-        userout "Command: #{cmd.to_s}" if $FOLLOW > 2
+        s_cmd = cmd.to_s
+        userout "Command: #{s_cmd}" if $FOLLOW > 2
         if cmd.is_a? Hash
           expanded = expand(cmd, info)
         else
@@ -192,7 +201,8 @@ class Machine
           rest = [ rest ] unless rest.is_a? Array
           expanded.concat expand(rest, info)
         end
-        userout "Expanded: #{expanded.to_s}" if $FOLLOW > 3
+        s_exp = expanded.to_s
+        userout "Expanded: #{s_exp}" if $FOLLOW > 3 and s_cmd != s_exp
       rescue RuntimeError => e
         set_error e.to_s
         return
@@ -255,20 +265,22 @@ $machine = Machine.new
 
 $signal_sender = Proc.new do |category, action, message, vars|
   case category
-  when 'error'
-    $machine.set_error(message.join(' '))
+  when 'error' then $machine.set_error(message.join(' '))
   when 'exit'
     if action == 'code' and vars.first != 0
       $machine.set_error(message.join(' '))
     end
+    true
+  else false
   end
 end
 
 class Command
   attr_reader :action
 
-  def initialize(name)
+  def initialize(name, expand_skip = 0)
     $machine.register(name, self)
+    $machine.expand_skip(name, expand_skip) if expand_skip > 0
   end
 
   def handle(cmd)
@@ -280,8 +292,7 @@ end
 
 class SetCommand < Command
   def initialize
-    super('set')
-    $machine.expand_skip('set', 2)
+    super('set', 2)
   end
 
   def handle(cmd)
@@ -290,10 +301,22 @@ class SetCommand < Command
 end
 SetCommand.new
 
+class DefaultCommand < Command
+  def initialize
+    super('default', 2)
+  end
+
+  def handle(cmd)
+    v = cmd[1]
+    return if $machine.variables.has_key? v
+    $machine.variables[v] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+  end
+end
+DefaultCommand.new
+
 class UnsetCommand < Command
   def initialize
-    super('unset')
-    $machine.expand_skip('set', 1000000)
+    super('unset', 1000000)
   end
 
   def handle(cmd)
@@ -304,10 +327,9 @@ class UnsetCommand < Command
 end
 UnsetCommand.new
 
-class IsSetCommand < Command
+class AssertVarCommand < Command
   def initialize
-    super('is_set')
-    $machine.expand_skip('set', 1000000) # Variable names must not be expanded.
+    super('assert_var', 1000000)
   end
 
   def handle(cmd)
@@ -318,7 +340,7 @@ class IsSetCommand < Command
     $machine.set_error("Not set: #{unset.join('\n')}") unless unset.empty?
   end
 end
-IsSetCommand.new
+AssertVarCommand.new
 
 class RunBase < Command
   @@actions_run_common = YAML.load(%q(
@@ -372,7 +394,7 @@ bytes:
       end
       out.push ''.concat(*vars)
     end
-    return out
+    userout(out) unless $QUIET
   end
 
   def handle(cmd)
@@ -383,7 +405,7 @@ bytes:
     idx = cmd.index 'program'
     unless idx.nil? or idx + 1 == cmd.length
       cmd[idx + 1] = DatalackeyProcess.locate_executable(cmd[idx + 1],
-        [ Dir.pwd, $root_dir, File.dirname($machine.state[:load][:source]) ])
+        [ Dir.pwd, $root_dir, File.dirname($machine.state_source) ])
     end # Missing program will be found normally and causes error.
     userout(cmd.to_s) if $FOLLOW > 4
     $lackey.send(@action, cmd, true)
@@ -858,7 +880,7 @@ if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
   $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
   $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
   $lackey = DatalackeyIO.new(
-    $lackey_proc.stdin, $lackey_proc.stdout, nil, sig_check)
+    $lackey_proc.stdin, $lackey_proc.stdout, sig_check)
 else
   begin
     $DIRECTORY, $PERMISSIONS, $MEMORY =
@@ -873,16 +895,15 @@ else
   $lackey_stderr = StoringReader.new($lackey_proc.stderr)
   echo = $ECHO ? Proc.new { |json| userout json } : nil
   $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
-    $QUIET ? nil : Proc.new { |msgs| msgs.each { |m| userout m } }, sig_check,
-    echo, echo)
+    sig_check, echo, echo)
 end
 
 $machine.run('__setup', states)
-userout $lackey_stderr.readlines
 
 $lackey_proc.finish
 $lackey.close
-$lackey_stderr.close
 $lackey.finish
+$lackey_stderr.close
+userout $lackey_stderr.readlines
 userout("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
 exit $machine.variables.fetch('__exitcode', $machine.had_error ? 1 : 0)

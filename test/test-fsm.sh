@@ -42,7 +42,8 @@ $FSM -m --stderr -f 5 fsm/feed-test.state
 $FSM -m --stderr -f 4 fsm/ruby.state
 $FSM -m --stderr -f 4 fsm/shell.state
 $FSM -m --stderr -f 4 fsm/rename-delete.state
-$FSM -m --stderr -f 4 fsm/isset.state
+$FSM -m --stderr -f 4 fsm/assert_var.state
+$FSM -m --stderr -f 4 fsm/default.state
 $FSM -m --stderr -f 4 fsm/include-delete.state
 $FSM -m --stderr -f 4 fsm/include-loop.state
 $FSM -m --stderr -f 4 --warn fsm/include-overwrite.state
@@ -52,6 +53,8 @@ $FSM -m --stderr -f 4 fsm/bad-file
 $FSM -m --stderr -f 4 fsm/first-multi.state
 $FSM -m --stderr -f 4 fsm/include-ignore.state
 $FSM -m --stderr -f 4 fsm/multi.state
+$FSM -m --stderr -f 4 fsm/extend.state
+$FSM -m --stderr -f 4 fsm/extend-load.state
 EOF
 fi
 

@@ -1,0 +1,9 @@
+---
+- initial:
+  - ruby: |
+      d = File.dirname($machine.state_source)
+      load(File.join(d, 'extend-load.rb'))
+      ExtensionCommand.new
+  - [ print, "Using extension command." ]
+  - extension
+  - extension with parameters

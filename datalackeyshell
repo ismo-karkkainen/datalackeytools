@@ -86,7 +86,7 @@ $in_prompt = false
 $output_mutex = Mutex.new
 
 def print_lines(messages)
-  return if messages.empty?
+  return false if not messages.is_a? Array or not messages.is_a? String or messages.empty?
   messages = [ messages ] unless messages.is_a? Array
   rows, cols = IO.console.winsize
   cut = []
@@ -115,6 +115,7 @@ def print_lines(messages)
     $stdout.flush
     Readline.redisplay() if in_prompt
   end
+  return true
 end
 
 # datalackey process
@@ -138,6 +139,7 @@ def handle_notifcation(category, action, message, vars)
       print_lines("INTERNAL ERROR: #{msg.join(' ')}")
     end
   end
+  nil
 end
 
 begin
@@ -148,7 +150,6 @@ rescue ArgumentError => e
 end
 stderr_discarder = DiscardReader.new($lackey_proc.stderr)
 $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
-  Proc.new { |msgs| print_lines(msgs) },
   Proc.new do |category, action, message, vars|
     handle_notifcation(category, action, message, vars)
   end,
@@ -563,12 +564,13 @@ class GetHandler < Handler
       :help => { :root => "Gets labels." }
     }
     pretty_print = Proc.new do |category, action, message, vars|
+      m = nil
       case category
-      when :print then [ JSON.pretty_generate(vars.first) ]
-      when :error then [ "Get failure: #{vars.join(' ')}" ]
-      when :note then [ "Missing: #{vars.join(' ')}" ]
-      else []
+      when :print then m = JSON.pretty_generate(vars.first)
+      when :error then m = "Get failure: #{vars.join(' ')}"
+      when :note then m = "Missing: #{vars.join(' ')}"
       end
+      print_lines m
     end
     @actions = PatternAction.new([{
       :print => [ { :get => [ '@', 'get', '', '?' ] } ],
@@ -594,8 +596,8 @@ class RenameHandler < Handler
     }
     message_proc = Proc.new do |category, action, message, vars|
       case category
-      when :note then [ "Missing: #{vars.join(' ')}" ]
-      else []
+      when :note then print_lines "Missing: #{vars.join(' ')}"
+      else false
       end
     end
     @actions = PatternAction.new([{
@@ -619,8 +621,8 @@ class DeleteHandler < Handler
     }
     message_proc = Proc.new do |category, action, message, vars|
       case category
-      when :note then [ "Missing: #{vars.join(' ')}" ]
-      else []
+      when :note then print_lines "Missing: #{vars.join(' ')}"
+      else nil
       end
     end
     @actions = PatternAction.new([{
@@ -653,7 +655,7 @@ class StorageInfoHandler < Handler
         end
         out.sort!
       end
-      out
+      print_lines out
     end
     @actions = PatternAction.new([{
       :return => [ { :storage_info => [ '@', 'storage-info', '', '?' ] } ]
@@ -1189,56 +1191,54 @@ class RunHandler < Handler
       :help => { :root => "Runs executable as identifier. If close is given, the input is closed after current input has been passed on. Uses current input, output, channel, env, and arg settings." }
     }
     run_common = Proc.new do |category, action, message, vars|
+      m = nil
       case category.to_s
-      when 'error' then [ "ERROR: #{action} : #{message.join(' ')}" ]
+      when 'error' then m = "ERROR: #{action} : #{message.join(' ')}"
       when 'note'
         case action.to_s
         when 'run_error_input_failed'
-          [ "Input failed: #{message.first.to_s}" ]
+          m = "Input failed: #{message.first.to_s}"
         when 'run_child_error_output_format'
-          [ "Output format error: #{message.first}" ]
-        else []
+          m = "Output format error: #{message.first}"
         end
-      when :bytes, 'bytes' then [ ''.concat(*vars) ]
-      else []
+      when :bytes, 'bytes' then m = ''.concat(*vars)
       end
+      print_lines m
     end
     run_only = Proc.new do |category, action, message, vars|
+      m = nil
       case category.to_s
       when 'note'
         case action.to_s
-        when 'run_terminated' then [ "Terminated." ]
-        when 'run_exit'
-          (0 < vars.first) ? [ "Exit: #{vars.first}" ] : []
-        when 'run_signal' then [ "Signal: #{vars.first}" ]
-        when 'run_stop' then [ "Stopped by signal: #{vars.first}" ]
-        when 'run_continue' then [ "Continued." ]
-        else []
+        when 'run_terminated' then m = "Terminated."
+        when 'run_exit' then m = "Exit: #{vars.first}" if 0 < vars.first
+        when 'run_signal' then m = "Signal: #{vars.first}"
+        when 'run_stop' then m = "Stopped by signal: #{vars.first}"
+        when 'run_continue' then m = "Continued."
         end
-      else []
       end
+      print_lines m
     end
     @actions = PatternAction.new([ @@actions_run_common ],
       [ run_only, run_common ])
     bgrun_only = Proc.new do |category, action, message, vars|
+      m = nil
       case category.to_s
       when 'return'
         case action.to_s
-        when 'run_running' then [ "PID: #{vars.first}" ]
-        else []
+        when 'run_running' then m = "PID: #{vars.first}"
         end
       when 'note'
         case action.to_s
-        when 'run_terminated' then [ "Terminated: #{message.first}" ]
+        when 'run_terminated' then m = "Terminated: #{message.first}"
         when 'run_exit'
-          (0 < vars.first) ? [ "Exit #{message.first}: #{vars.first}" ] : []
-        when 'run_signal' then [ "Signal #{message.first}: #{vars.first}" ]
-        when 'run_stop' then [ "Stopped #{message.first}: #{vars.first}" ]
-        when 'run_continue' then [ "Continued: #{message.first}" ]
-        else []
+          m = "Exit #{message.first}: #{vars.first}" if 0 < vars.first
+        when 'run_signal' then m = "Signal #{message.first}: #{vars.first}"
+        when 'run_stop' then m = "Stopped #{message.first}: #{vars.first}"
+        when 'run_continue' then m = "Continued: #{message.first}"
         end
-      else []
       end
+      print_lines m
     end
     @bgactions = PatternAction.new(
       [ @@actions_bgrun_only, @@actions_run_common ],
@@ -1288,8 +1288,8 @@ class KillHandler < Handler
     }
     message_proc = Proc.new do |category, action, message, vars|
       case category
-      when :note then [ "Missing: #{vars.join(' ')}" ]
-      else []
+      when :note then print_lines "Missing: #{vars.join(' ')}"
+      else nil
       end
     end
     @actions = PatternAction.new([{
@@ -1324,18 +1324,18 @@ class FeedHandler < Handler
       :help => { :root => "Pass current input set to processes." }
     }
     message_proc = Proc.new do |category, action, message, vars|
+      m = nil
       case category
       when :error
         case action
-        when 'args_missing' then [ "Missing: #{vars.join(' ')}" ]
-        when 'argument_unknown' then [ "Unknown: #{vars.join(' ')}" ]
-        when 'duplicate' then [ "Duplicate: #{vars.join(' ')}" ]
-        when 'feed_closed' then [ "Closed." ]
-        when 'feed_process' then [ "No process." ]
-        else []
+        when 'args_missing' then m = "Missing: #{vars.join(' ')}"
+        when 'argument_unknown' then m = "Unknown: #{vars.join(' ')}"
+        when 'duplicate' then m = "Duplicate: #{vars.join(' ')}"
+        when 'feed_closed' then m = "Closed."
+        when 'feed_process' then m = "No process."
         end
-      else []
       end
+      print_lines m
     end
     @actions = PatternAction.new([ @@actions_feed ], [ message_proc ])
     register
@@ -1360,15 +1360,15 @@ class EndFeedHandler < Handler
       :help => { :root => "Closes process input." }
     }
     notify = Proc.new do |category, action, message, vars|
+      m = nil
       case category
       when :note
         case action
-        when :not_open then [ "Closed already: #{vars.join(' ')}" ]
-        when :missing then [ "Missing: #{vars.join(' ')}" ]
-        else []
+        when :not_open then m = "Closed already: #{vars.join(' ')}"
+        when :missing then m = "Missing: #{vars.join(' ')}"
         end
-      else []
       end
+      print_lines m
     end
     @actions = PatternAction.new([{
       :note => [ { :not_open => [ '@', 'end-feed', 'not-open', '*' ],
