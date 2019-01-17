@@ -55,6 +55,7 @@ $FSM -m --stderr -f 4 fsm/include-ignore.state
 $FSM -m --stderr -f 4 fsm/multi.state
 $FSM -m --stderr -f 4 fsm/extend.state
 $FSM -m --stderr -f 4 fsm/extend-load.state
+$FSM -m --stderr -f 4 fsm/jump.state
 EOF
 fi
 

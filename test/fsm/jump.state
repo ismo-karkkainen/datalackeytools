@@ -1,0 +1,11 @@
+---
+- setup:
+  - set targetname target
+  - jump targetname
+  - print Not visible.
+  signal2state:
+    null: final
+- target:
+  - print Jumped to target.
+  final:
+  - print Not entered.

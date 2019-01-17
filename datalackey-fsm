@@ -95,6 +95,7 @@ class Machine
     @skip_expand = { }
     @signal_mutex = Mutex.new
     @signal = nil
+    @forced_state = nil
     @variables = Hash.new(nil)
     @label2signal_mutex = Mutex.new
     @label2signal = { }
@@ -146,12 +147,13 @@ class Machine
     return item
   end
 
-  def set_signal(sig)
+  def set_signal(sig, target_state = nil)
     @signal_mutex.synchronize do
       if @signal.nil? or sig == 'error'
         userout "Signal: #{sig}" if $FOLLOW > 0
         @signal = sig
         @had_error = @signal == 'error'
+        @forced_state = target_state
         return true
       end
     end
@@ -171,7 +173,9 @@ class Machine
     @signal_mutex.synchronize do
       sig = @signal
       @signal = nil
-      return sig
+      state = @forced_state
+      @forced_state = nil
+      return [ sig, state ]
     end
   end
 
@@ -246,10 +250,12 @@ class Machine
       end
       run_state(state, name)
       @label2signal_mutex.synchronize { @label2signal = { } }
-      sig = wipe_signal
-      name = state.fetch('signal2state', { }).fetch(sig, nil)
-      name = signal2state.fetch(sig, nil) if name.nil?
-      break if name.nil?
+      sig, name = wipe_signal
+      if name.nil?
+        name = state.fetch('signal2state', { }).fetch(sig, nil)
+        name = signal2state.fetch(sig, nil) if name.nil?
+        break if name.nil?
+      end
       unless states.has_key? name
         userout "Transition to unknown state: #{name}"
         break
@@ -559,6 +565,18 @@ class SignalCommand < Command
   end
 end
 SignalCommand.new
+
+class JumpCommand < Command
+  def initialize
+    super('jump')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    $machine.set_signal('__jump', cmd[1])
+  end
+end
+JumpCommand.new
 
 class DeleteCommand < Command
   def initialize
