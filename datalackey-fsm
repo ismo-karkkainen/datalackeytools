@@ -2,7 +2,6 @@
 
 require 'optparse'
 require 'yaml'
-require 'json'
 require 'tempfile'
 require 'datalackeylib'
 
@@ -347,6 +346,41 @@ class AssertVarCommand < Command
   end
 end
 AssertVarCommand.new
+
+class PushCommand < Command
+  def initialize
+    super('push', 2)
+  end
+
+  def handle(cmd)
+    # Creates a stack if not present, turns scalar into stack.
+    stack = $machine.variables.fetch(cmd[1], [])
+    stack = [ stack ] unless stack.is_a? Array
+    stack.push(3 < cmd.length ? cmd[2...cmd.length] : cmd[2])
+    $machine.variables[cmd[1]] = stack
+  end
+end
+PushCommand.new
+
+class PopCommand < Command
+  def initialize
+    super('pop', 3)
+  end
+
+  def handle(cmd)
+    unless $machine.variables.has_key? cmd[1]
+      $machine.set_error("Stack not found: #{cmd[1]}")
+      return
+    end
+    # Interprets scalas as stack. Empty array treated as stack.
+    stack = $machine.variables[cmd[1]]
+    stack = [ stack ] unless stack.is_a? Array
+    return $machine.set_error("Stack empty: #{cmd[1]}") if stack.empty?
+    $machine.variables[cmd[2]] = stack.pop
+    $machine.variables.delete(cmd[1]) if stack.empty?
+  end
+end
+PopCommand.new
 
 class RunBase < Command
   @@actions_run_common = YAML.load(%q(

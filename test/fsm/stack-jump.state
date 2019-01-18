@@ -1,0 +1,25 @@
+---
+- setup:
+  - jump target
+  signal2state:
+    null: final
+- target:
+  - print Jumped to target.
+  - set return_jumps final
+  - jump subroutine-begin
+  final:
+  - print Final state.
+- subroutine-begin:
+  - assert_var return_jumps
+  - print In subroutine begin.
+  - push return_jumps subroutine-end
+  - jump sub2routine
+  subroutine-end:
+  - print In subroutine end.
+  - pop return_jumps _temp
+  - jump _temp
+- sub2routine:
+  - assert_var return_jumps
+  - print In sub2routine.
+  - pop return_jumps _temp
+  - jump _temp
