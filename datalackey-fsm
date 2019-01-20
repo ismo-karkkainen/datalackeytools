@@ -42,7 +42,7 @@ parser = OptionParser.new do |opts|
     $QUIET = true
   end
   opts.separator 'Options for error checking and tracking execution:'
-  opts.on('-w', '--warn', 'Print warning when state is overwritten.') do
+  opts.on('--warn', 'Print warning when state is overwritten.') do
     $OVERWRITE_ACTION = :warn
   end
   opts.on('--error', 'State overwriting is an error.') do
@@ -87,27 +87,26 @@ end
 
 class Machine
   attr_accessor :variables
-  attr_reader :had_error, :state
+  attr_reader :had_error, :state, :state_name, :machine
 
   def initialize
     @commands = Hash.new(nil)
+    @variables = Hash.new(nil)
     @skip_expand = { }
     @signal_mutex = Mutex.new
     @signal = nil
     @forced_state = nil
-    @variables = Hash.new(nil)
-    @label2signal_mutex = Mutex.new
+    @state_mutex = Mutex.new
     @label2signal = { }
     @state = nil
+    @state_name = nil
+    @machine = nil
   end
 
-  def register(name, object)
+  def register(name, object, expand_skip_count = 0)
     raise ArgumentError.new("Command name is not a string.") unless name.is_a? String
     @commands[name] = object
-  end
-
-  def expand_skip(name, count)
-    @skip_expand[name] = count
+    @skip_expand[name] = expand_skip_count if expand_skip_count > 0
   end
 
   def get_binding
@@ -168,18 +167,8 @@ class Machine
     @signal_mutex.synchronize { @signal }
   end
 
-  def wipe_signal
-    @signal_mutex.synchronize do
-      sig = @signal
-      @signal = nil
-      state = @forced_state
-      @forced_state = nil
-      return [ sig, state ]
-    end
-  end
-
   def label2signal
-    @label2signal_mutex.synchronize { @label2signal }
+    @state_mutex.synchronize { @label2signal }
   end
 
   def state_source
@@ -188,7 +177,6 @@ class Machine
 
   def run_state(state, name)
     userout "State: #{name}" if $FOLLOW > 0
-    @state = state # Command may need e.g. the location of the state file.
     state[:commands].each do |cmd|
       info = []
       begin
@@ -236,30 +224,44 @@ class Machine
   end
 
   def run(initial_state_name, states)
+    @state_mutex.synchronize { @machine = states }
     last_state_name = '__terminate_all'
     finalized = false
     name = initial_state_name
     signal2state = { } # Only changes when state has new global mapping.
-    while states.has_key? name
+    while true
+      userout($lackey_stderr.readlines) unless $QUIET
       finalized = true if name == last_state_name
+      unless states.has_key? name
+        userout "Transition to unknown state: #{name}"
+        break
+      end
       state = states[name]
       signal2state = state.fetch('global_signal2state', signal2state)
-      @label2signal_mutex.synchronize do
+      @state_mutex.synchronize do
         @label2signal = state.fetch('label2signal', { })
+        @state = state # Command may need e.g. the location of the state file.
+        @state_name = name
       end
       run_state(state, name)
-      @label2signal_mutex.synchronize { @label2signal = { } }
-      sig, name = wipe_signal
+      @state_mutex.synchronize do
+        @label2signal = { }
+        @state = nil
+        @state_name = nil
+      end
+      sig = nil
+      name = nil
+      @signal_mutex.synchronize do
+        sig = @signal
+        @signal = nil
+        name = @forced_state
+        @forced_state = nil
+      end
       if name.nil?
         name = state.fetch('signal2state', { }).fetch(sig, nil)
         name = signal2state.fetch(sig, nil) if name.nil?
         break if name.nil?
       end
-      unless states.has_key? name
-        userout "Transition to unknown state: #{name}"
-        break
-      end
-      userout($lackey_stderr.readlines) unless $QUIET
     end
     if not finalized and states.has_key? last_state_name
       run_state(states[last_state_name], last_state_name)
@@ -284,8 +286,7 @@ class Command
   attr_reader :action
 
   def initialize(name, expand_skip = 0)
-    $machine.register(name, self)
-    $machine.expand_skip(name, expand_skip) if expand_skip > 0
+    $machine.register(name, self, expand_skip)
   end
 
   def handle(cmd)
