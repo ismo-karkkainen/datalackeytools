@@ -199,27 +199,33 @@ class Machine
         return
       end
       handler = nil
-      if expanded.is_a? String
-        handler = @commands[expanded]
-        userout "Command: #{expanded}" if $FOLLOW == 2
-        set_error("Unknown command: #{expanded}") if handler.nil?
-      elsif expanded.is_a? Array
-        handler = @commands[expanded.first]
-        userout "Command: #{expanded.first}" if $FOLLOW == 2
-        set_error("Unknown command: #{expanded.first}") if handler.nil?
-      elsif expanded.is_a? Hash
-        @commands.each_pair do |name, hndlr|
-          if cmd.has_key? name # Registred names should be unique.
-            userout "Command: #{name}" if $FOLLOW == 2
-            handler = hndlr
-            break
-          end
+      name = nil
+      if expanded.is_a? Hash
+        @commands.each_key do |key|
+          next unless cmd.has_key? key # Registered names ought to be unique.
+          name = key
+          break
         end
-        set_error("Match for dictionary keys not found.") if handler.nil?
+        if name.nil?
+          set_error("Match for dictionary keys not found.")
+          break
+        end
+      else
+        if expanded.is_a? String
+          name = expanded
+        elsif expanded.is_a? Array
+          name = expanded.first
+        else
+          set_error("Unexpected type for command: #{expanded.class.name}")
+          break
+        end
       end
+      handler = @commands[name]
+      set_error("Unknown command: #{name}") if handler.nil?
       break if handler.nil? or not get_signal.nil?
+      userout "Command: #{name}" if $FOLLOW == 2
       handler.handle(expanded)
-      break unless get_signal.nil? # Prevents follow-output for next command.
+      break unless get_signal.nil? # Prevents following output for next command.
     end
   end
 
@@ -257,6 +263,7 @@ class Machine
         name = @forced_state
         @forced_state = nil
       end
+      name = nil unless sig == '__jump' # Jump may have been "interrupted".
       if name.nil?
         name = state.fetch('signal2state', { }).fetch(sig, nil)
         name = signal2state.fetch(sig, nil) if name.nil?
@@ -287,12 +294,26 @@ class Command
 
   def initialize(name, expand_skip = 0)
     $machine.register(name, self, expand_skip)
+    @name = name
   end
 
   def handle(cmd)
     cmd.flatten!
     userout(cmd.to_s) if $FOLLOW > 4
     $lackey.send(@action, cmd)
+  end
+
+  def assert(cmd, minlen, maxlen = nil)
+    if cmd.length < minlen
+      $machine.set_error "Command #{@name} too short: #{cmd.length} < #{minlen}"
+      return false
+    end
+    return true if maxlen.nil?
+    if maxlen < cmd.length
+      $machine.set_error "Command #{@name} too long: #{maxlen} < #{cmd.length}"
+      return false
+    end
+    return true
   end
 end
 
@@ -302,6 +323,7 @@ class SetCommand < Command
   end
 
   def handle(cmd)
+    return unless assert(cmd, 3)
     $machine.variables[cmd[1]] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
   end
 end
@@ -313,6 +335,7 @@ class DefaultCommand < Command
   end
 
   def handle(cmd)
+    return unless assert(cmd, 3)
     v = cmd[1]
     return if $machine.variables.has_key? v
     $machine.variables[v] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
@@ -354,7 +377,8 @@ class PushCommand < Command
   end
 
   def handle(cmd)
-    # Creates a stack if not present, turns scalar into stack.
+    return unless assert(cmd, 3)
+    # Creates a stack if not present, or turns scalar into stack.
     stack = $machine.variables.fetch(cmd[1], [])
     stack = [ stack ] unless stack.is_a? Array
     stack.push(3 < cmd.length ? cmd[2...cmd.length] : cmd[2])
@@ -369,6 +393,7 @@ class PopCommand < Command
   end
 
   def handle(cmd)
+    return unless assert(cmd, 3, 3)
     unless $machine.variables.has_key? cmd[1]
       $machine.set_error("Stack not found: #{cmd[1]}")
       return
@@ -439,6 +464,7 @@ bytes:
   end
 
   def handle(cmd)
+    return unless assert(cmd, 4)
     t = cmd[0] # Swap command and user-given identifier.
     cmd[0] = cmd[1]
     cmd[1] = t
@@ -541,13 +567,14 @@ class WaitProcessCommand < Command
 
   def handle(cmd)
     cmd.flatten!
+    return unless assert(cmd, 2)
     begin
       deadline = Time.new + Float(cmd[1])
     rescue ArgumentError
       $machine.set_error "Not a number: #{cmd[1]}"
       return
     end
-    waited = (cmd.length > 2) ? cmd[2...cmd.length] : $lackey.process.keys
+    waited = (2 < cmd.length) ? cmd[2...cmd.length] : $lackey.process.keys
     while (Time.new <=> deadline) == -1
       sleep(0.2)
       remains = false
@@ -567,10 +594,11 @@ class WaitDataCommand < Command
   def handle(cmd)
     cmd.flatten!
     unseen = cmd[1...cmd.length]
-    while not unseen.empty?
+    while true
       data = $lackey.data
       unseen.delete_if { |u| data.has_key? u }
-      sleep(0.2) unless unseen.empty?
+      break if unseen.empty?
+      sleep(0.2)
     end
   end
 end
@@ -596,6 +624,7 @@ class SignalCommand < Command
 
   def handle(cmd)
     cmd.flatten!
+    return unless assert(cmd, 2, 2)
     $machine.set_signal(cmd[1])
   end
 end
@@ -608,6 +637,7 @@ class JumpCommand < Command
 
   def handle(cmd)
     cmd.flatten!
+    return unless assert(cmd, 2, 2)
     $machine.set_signal('__jump', cmd[1])
   end
 end
