@@ -1,0 +1,19 @@
+---
+- start:
+  - comment The source data would be loaded from somewhere.
+  - [ set, stage1-exe-args, "./iterative2prog", "3" ]
+  - comment Normally you would use two different programs.
+  - set stage2-exe-args stage1-exe-args
+  - set stage1-params input counter data output data counter
+  - set stage2-params stage1-params
+  - set stage1-output counter
+  - set stage2-output stage1-output
+  - comment Dump initial counter to datalackey storage.
+  - ruby: $lackey.dump('{"counter":0}')
+  - comment Expect iterative2 be included in command-line.
+  - set return end
+  - jump iterative2
+- end:
+  - print Finished iterating.
+  - assert_data counter exit
+  - comment Here you would save the data.

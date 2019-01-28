@@ -1,0 +1,42 @@
+---
+- iterative2:
+  - assert_var stage1-exe-args stage1-params stage1-output
+  - assert_var stage2-exe-args stage2-params stage2-output
+  - assert_var return
+  signal2state:
+    null: _i2_first-stage
+    error: _i2_complain
+- _i2_complain:
+  - comment Below is one option for multi-line print.
+  - 
+    - print
+    - |
+      Variables missing.
+      stage[12]-exe-args is executable file name and argument list.
+      stage[12]-params is input and possibly output mapping for the program.
+      stage[12]-output is a label to wait for, needs to be output always.
+      return contains state name to return to.
+      To use this, set abovementioned variables and: jump iterative2
+  - comment No exit state set so run finishes.
+- _i2_first-stage:
+  - run stage1 pipes_stderr stage1-params end-feed program stage1-exe-args
+  - wait_data stage1-output
+  label2signal:
+    exit: finished
+  signal2state:
+    null: _i2_second-stage
+    finished: _i2_end-state
+- _i2_second-stage:
+  - run stage2 pipes_stderr stage2-params end-feed program stage2-exe-args
+  - wait_data stage2-output
+  label2signal:
+    exit: finished
+  signal2state:
+    null: _i2_first-stage
+    finished: _i2_end-state
+  comment: |
+    Output of data labeled "exit" triggers exit.
+    Otherwise run program, wait for known output(s), transfer to other stage.
+- _i2_end-state:
+  - comment Here return is expanded unlike in signal2state mapping.
+  - jump return

@@ -1,0 +1,11 @@
+---
+- label-signal:
+  - [ launch, producer, out, JSON, stdout, program, echo, "{\"out\":1}" ]
+  - print Waiting.
+  - wait_signal
+  label2signal:
+    out: exit
+  signal2state:
+    exit: exit
+- exit:
+  - print Got signal.

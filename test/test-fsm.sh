@@ -57,6 +57,7 @@ $FSM -m --stderr -f 4 fsm/extend.state
 $FSM -m --stderr -f 4 fsm/extend-load.state
 $FSM -m --stderr -f 4 fsm/jump.state
 $FSM -m --stderr -f 4 fsm/stack-jump.state
+$FSM -m --stderr -f 4 fsm/label2signal.state
 EOF
 fi
 

@@ -317,6 +317,16 @@ class Command
   end
 end
 
+class CommentCommand < Command
+  def initialize
+    super('comment', 1000000)
+  end
+
+  def handle(cmd)
+  end
+end
+CommentCommand.new
+
 class SetCommand < Command
   def initialize
     super('set', 2)
@@ -366,10 +376,41 @@ class AssertVarCommand < Command
     cmd.shift
     unset = []
     cmd.each { |name| unset.push(name) unless $machine.variables.has_key? name }
-    $machine.set_error("Not set: #{unset.join('\n')}") unless unset.empty?
+    $machine.set_error("Not set: #{unset.join(' ')}") unless unset.empty?
   end
 end
 AssertVarCommand.new
+
+class AssertNotVar < Command
+  def initialize
+    super('assert_notvar', 1000000)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    set = []
+    cmd.each { |name| set.push(name) if $machine.variables.has_key? name }
+    $machine.set_error("Set: #{set.join(' ')}") unless set.empty?
+  end
+end
+AssertNotVar.new
+
+class AssertDataCommand < Command
+  def initialize
+    super('assert_data')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    data = $lackey.data
+    missing = []
+    cmd.each { |name| missing.push(name) unless data.has_key? name }
+    $machine.set_error("Missing: #{missing.join(' ')}") unless missing.empty?
+  end
+end
+AssertDataCommand.new
 
 class PushCommand < Command
   def initialize
@@ -674,7 +715,7 @@ class PrintCommand < Command
       multi = true
       cmd[k] = cmd[k].flatten.join(' ')
     end
-    userout cmd.join(multi ? '\n' : ' ')
+    userout cmd.join(multi ? "\n" : ' ')
   end
 end
 PrintCommand.new
@@ -767,8 +808,8 @@ class ShellCommand < Command
       stdin.puts(vin) unless vin.nil?
       stdin.close
       wait.join
-      $machine.variables[vout] = rd_out.readlines.join('\n') unless vout.nil?
-      $machine.variables[verr] = rd_err.readlines.join('\n') unless verr.nil?
+      $machine.variables[vout] = rd_out.readlines.join("\n") unless vout.nil?
+      $machine.variables[verr] = rd_err.readlines.join("\n") unless verr.nil?
       exitcode = wait.value.exitstatus
       wait = nil
       $machine.set_error("Shell exit: #{exitcode}") if exitcode != 0
@@ -793,7 +834,7 @@ class RubyCommand < Command
   def handle(cmd)
     # Access to variables via @variables in binding.
     script = cmd['ruby']
-    script = script.join('\n') if script.is_a? Array
+    script = script.join("\n") if script.is_a? Array
     begin
       eval(script, $machine.get_binding)
     rescue StandardError => e
@@ -938,16 +979,17 @@ end
 
 def label_signal_check(category, action, message, vars)
   case category
-  when 'internal'
+  when :internal
     case action
-    when 'stored'
-      if $machine.label2signal.has_key? vars.first
-        $machine.set_signal $machine.label2signal[vars.first]
+    when :stored
+      l2s = $machine.label2signal
+      if l2s.has_key? vars.first
+        $machine.set_signal l2s[vars.first]
       end
-    when 'data_error'
+    when :data_error
       $machine.set_error(message.to_s)
     end
-  when 'internal_error'
+  when :internal_error
     $machine.set_error(message.to_s)
   end
 end
