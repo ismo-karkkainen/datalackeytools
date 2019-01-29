@@ -279,9 +279,9 @@ $machine = Machine.new
 
 $signal_sender = Proc.new do |category, action, message, vars|
   case category
-  when 'error' then $machine.set_error(message.join(' '))
-  when 'exit'
-    if action == 'code' and vars.first != 0
+  when :error then $machine.set_error(message.join(' '))
+  when :exit
+    if action == :code and vars.first != 0
       $machine.set_error(message.join(' '))
     end
     true
@@ -450,27 +450,26 @@ end
 PopCommand.new
 
 class RunBase < Command
-  @@actions_run_common = YAML.load(%q(
----
-error:
-- args_missing: [ "@", run, error, missing, "*" ]
-- syntax: [ "@", run, error, "?", argument, unknown ]
-- syntax: [ "@", run, error, "?", duplicate, "?" ]
-- command_error: [ "@", run, error, "*" ]
-- run_internal: [ "@", run, error, exception ]
-- run_internal: [ "@", run, error, no-memory ]
-- run_internal: [ "@", run, error, no-processes ]
-- run_internal: [ "@", run, error, no-thread ]
-- run_internal: [ "@", run, error, pipe ]
-note:
-- run_error_input_failed: [ "@", run, error, input, failed ]
-- run_child_error_output_format: [ "@", run, error, format ]
-- run_child_error_output_format: [ "@", error, format ]
-exit:
-- code: [ "@", run, exit, "?" ]
-bytes:
-- bytes: [ "@", run, bytes, "?", "*" ]
-))
+  @@actions_run_common = {
+    :error => [
+      { :args_missing => [ "@", "run", "error", "missing", "*" ] },
+      { :syntax => [ "@", "run", "error", "?", "argument", "unknown" ] },
+      { :syntax => [ "@", "run", "error", "?", "duplicate", "?" ] },
+      { :command_error => [ "@", "run", "error", "*" ] },
+      { :run_internal => [ "@", "run", "error", "exception" ] },
+      { :run_internal => [ "@", "run", "error", "no-memory" ] },
+      { :run_internal => [ "@", "run", "error", "no-processes" ] },
+      { :run_internal => [ "@", "run", "error", "no-thread" ] },
+      { :run_internal => [ "@", "run", "error", "pipe" ] }
+    ],
+    :note => [
+      { :run_error_input_failed => [ "@", "run", "error", "input", "failed" ] },
+      { :run_child_error_output_format => [ "@", "run", "error", "format" ] },
+      { :run_child_error_output_format => [ "@", "error", "format" ] }
+    ],
+    :exit => [ { :code => [ "@", "run", "exit", "?" ] } ],
+    :bytes => [ { :bytes => [ "@", "run", "bytes", "?", "*" ] } ]
+  }
   @@prev_bytes_mutex = Mutex.new
   @@prev_bytes_id = nil
 
@@ -484,14 +483,14 @@ bytes:
   def message_maker(category, action, message, vars)
     out = []
     case category
-    when 'note'
+    when :note
       case action
-      when 'run_error_input_failed'
+      when :run_error_input_failed
         out.push "Output to #{message[0]} failed."
-      when 'run_child_error_output_format'
+      when :run_child_error_output_format
         out.push "Output to #{message[0]} failed."
       end
-    when 'bytes'
+    when :bytes
       id = message[0]
       @@prev_bytes_mutex.synchronize do
         if id != @@prev_bytes_id
@@ -502,6 +501,7 @@ bytes:
       out.push ''.concat(*vars)
     end
     userout(out) unless $QUIET
+    return not(out.empty?)
   end
 
   def handle(cmd)
@@ -544,8 +544,8 @@ class LaunchCommand < RunBase
   def initialize
     super('launch')
     @action = PatternAction.new([
-      { 'return' => [{ 'run' => [ '@', 'run', 'running', '?' ] }],
-        'error' => [{ 'term' => [ '@', 'run', 'terminated', '?' ] }]},
+      { :return => [{ :run => [ '@', 'run', 'running', '?' ] }],
+        :error => [{ :term => [ '@', 'run', 'terminated', '?' ] }]},
       @@actions_run_common ], [ @msgmaker, $signal_sender ])
   end
 
@@ -556,7 +556,6 @@ class LaunchCommand < RunBase
   end
 end
 LaunchCommand.new
-
 
 class ProcessCommand < Command
   def initialize(name)

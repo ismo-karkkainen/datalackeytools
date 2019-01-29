@@ -264,47 +264,47 @@ class DatalackeyIO
           if msg[0].nil?
             actionable = []
             ca.each do |item|
-              case item.category.to_s
-              when 'internal'
+              case item.category
+              when :internal
                 name = vars.first
                 id = vars.last
                 # Messages from different threads may arrive out of order so
                 # new data/process may be in book-keeping when previous should
                 # be removed. With data these imply over-writing immediately,
                 # with processes re-use of identifier and running back to back.
-                case item.action.to_s
-                when 'stored'
+                case item.action
+                when :stored
                   @dataprocess_mutex.synchronize do
                     if @data[name] < id
                       @data[name] = id
                       actionable.push item
                     end
                   end
-                when 'deleted'
+                when :deleted
                   @dataprocess_mutex.synchronize do
                     if @data.has_key?(name) and @data[name] <= id
                       @data.delete name
                       actionable.push item
                     end
                   end
-                when 'data_error'
+                when :data_error
                   @dataprocess_mutex.synchronize do
                     @data.delete(name) if @data[name] == id
                     actionable.push item
                   end
-                when 'started'
+                when :started
                   @dataprocess_mutex.synchronize { @process[name] = id }
                   actionable.push item
-                when 'ended'
+                when :ended
                   @dataprocess_mutex.synchronize do
                     @process.delete(name) if @process[name] == id
                     actionable.push item
                   end
-                when 'error_format'
+                when :error_format
                   @to_datalackey_mutex.synchronize { @to_datalackey.putc 0 }
                   actionable.push item
                 end
-              when 'internal_error'
+              when :internal_error
                 actionable.push item
               else
                 next
@@ -326,15 +326,15 @@ class DatalackeyIO
           # Check if the waited command needs to be finished etc.
           finish = false
           ca.each do |item|
-            case item.category.to_s
-            when 'return' then finish = true
-            when 'error' then finish = true
-            when 'internal'
-              case item.action.to_s
-              when 'done'
+            case item.category
+            when :return then finish = true
+            when :error then finish = true
+            when :internal
+              case item.action
+              when :done
                 finish = true
                 @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
-              when 'version'
+              when :version
                 @syntax = msg[3]['commands']
                 @version = { }
                 msg.last.each_pair do |key, value|
@@ -400,7 +400,7 @@ class DatalackeyIO
     tracker.status = true
     unless tracker.exit.nil?
       tracker.exit.each do |item|
-        tracker.status = false if item.category == 'error'
+        tracker.status = false if item.category == :error
       end
     end
     return tracker

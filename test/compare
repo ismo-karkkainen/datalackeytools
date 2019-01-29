@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+
+if ARGV.length != 2
+  STDERR.puts "Usage: compare expected current"
+  exit 1
+end
+
+def load_results(filename)
+  f = File.new(filename, 'r', chomp: true)
+  all = Hash.new
+  result = Hash.new
+  block = []
+  f.readlines.each do |line|
+    if line.start_with? '####'
+      if line.start_with? '####COMMAND'
+        if result.has_key? :command
+          all[result[:command]] = result
+          result = Hash.new
+        end
+        result[:command] = line.split(' ', 2).last
+      elsif line.start_with? '####CODE'
+        begin
+          result[:code] = Integer(line.split(' ', 2).last)
+        rescue ArgumentError => e
+          STDERR.puts e.to_s
+          exit 2
+        end
+      elsif line.start_with? '####OUT'
+        block = []
+        result[:out] = block
+      elsif line.start_with? '####ERR'
+        block = []
+        result[:err] = block
+      else
+        STDERR.puts "Unknown line: #{line}"
+        exit 3
+      end
+    else
+      block.push line
+    end
+  end
+  f.close
+  return all
+end
+
+expected_results = load_results(ARGV.first)
+current_results = load_results(ARGV.last)
+
+def compare_arrays(exp, res)
+  if exp.length != res.length
+    STDERR.puts "Expected length #{exp.length} != result length #{res.length}"
+    return false
+  end
+  exp.each_index do |k|
+    if exp[k] != res[k]
+      STDERR.puts "Mismatch in line #{k + 1}"
+      return false
+    end
+  end
+  return true
+end
+
+def compare_results(expected, current, command)
+  if expected.fetch(:code, nil) != current.fetch(:code, nil)
+    STDERR.puts "Inequal return codes: #{command}"
+    return false
+  end
+  exp = expected.fetch(:out, [])
+  res = current.fetch(:out, [])
+  unless compare_arrays(exp, res)
+    STDERR.puts "Different stdout contents: #{command}"
+    return false
+  end
+  exp = expected.fetch(:err, [])
+  res = current.fetch(:err, [])
+  unless compare_arrays(exp, res)
+    STDERR.puts "Different stderr contents: #{command}"
+    return false
+  end
+  return true
+end
+
+exitcode = 0
+current_results.each_pair do |command, current|
+  expected = expected_results.delete command
+  if expected.nil?
+    STDERR.puts "Missing from expected: #{command}"
+    next
+  end
+  exitcode = 1 unless compare_results(expected, current, command)
+end
+
+# Missing results from current.
+unless expected_results.empty?
+  STDERR.puts "Missing from current results:"
+  expected_results.keys.sort.each { |cmd| STDERR.puts cmd }
+  exitcode = 1
+end
+exit exitcode

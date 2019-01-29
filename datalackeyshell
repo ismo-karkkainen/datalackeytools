@@ -121,25 +121,24 @@ end
 # datalackey process
 
 def handle_notifcation(category, action, message, vars)
-  case category.to_s
-  when 'internal'
-    case action.to_s
-    when 'stored' then print_lines("Stored: #{vars.first}")
-    when 'deleted' then print_lines("Deleted: #{vars.first}")
-    when 'data_error' then print_lines("DATA ERROR: #{vars.first}")
-    when 'started'
-    when 'ended'
-    when 'error_format' then print_lines("FORMAT ERROR: #{vars.first}")
+  case category
+  when :internal
+    case action
+    when :stored then print_lines("Stored: #{vars.first}")
+    when :deleted then print_lines("Deleted: #{vars.first}")
+    when :data_error then print_lines("DATA ERROR: #{vars.first}")
+    when :started
+    when :ended
+    when :error_format then print_lines("FORMAT ERROR: #{vars.first}")
     end
-  when 'internal_error'
-    case action.to_s
-    when 'user_id'
+  when :internal_error
+    case action
+    when :user_id
       print_lines("Bad identifier in run command? #{msg.join(' ')}")
     else
       print_lines("INTERNAL ERROR: #{msg.join(' ')}")
     end
   end
-  nil
 end
 
 begin
@@ -1201,7 +1200,7 @@ class RunHandler < Handler
         when 'run_child_error_output_format'
           m = "Output format error: #{message.first}"
         end
-      when :bytes, 'bytes' then m = ''.concat(*vars)
+      when 'bytes' then m = ''.concat(*vars)
       end
       print_lines m
     end
@@ -1325,9 +1324,9 @@ class FeedHandler < Handler
     }
     message_proc = Proc.new do |category, action, message, vars|
       m = nil
-      case category
-      when :error
-        case action
+      case category.to_s
+      when 'error'
+        case action.to_s
         when 'args_missing' then m = "Missing: #{vars.join(' ')}"
         when 'argument_unknown' then m = "Unknown: #{vars.join(' ')}"
         when 'duplicate' then m = "Duplicate: #{vars.join(' ')}"

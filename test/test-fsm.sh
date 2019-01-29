@@ -34,10 +34,10 @@ if [ $# -gt 1 ]; then
 else
     cat > $CMDS << EOF
 $FSM -m --stderr -f 4 fsm/set-print.state
-$FSM -m --stderr -f 5 fsm/run-exit.state
-$FSM -m --stderr -f 5 fsm/launch-signal.state
-$FSM -m --stderr -f 5 fsm/launch-terminate.state
-$FSM -m --stderr -f 5 fsm/launch-wait.state
+$FSM -m --stderr -f 4 fsm/run-exit.state
+$FSM -m --stderr -f 4 fsm/launch-signal.state
+$FSM -m --stderr -f 4 fsm/launch-terminate.state
+$FSM -m --stderr -f 4 fsm/launch-wait.state
 $FSM -m --stderr -f 5 fsm/feed-test.state
 $FSM -m --stderr -f 4 fsm/ruby.state
 $FSM -m --stderr -f 4 fsm/shell.state
