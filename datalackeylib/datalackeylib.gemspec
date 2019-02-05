@@ -7,6 +7,8 @@ Gem::Specification.new do |s|
 Classes and methods for using datalackey from Ruby programs.
 Requires separately installed datalackey executable, installed into
 /usr/local/libexec, /usr/libexec, or into a directory in $PATH.
+
+Licensed under Universal Permissive License, see License.txt.
 )
   s.authors     = [ "Ismo Kärkkäinen" ]
   s.email       = 'ismokarkkainen@icloud.com'

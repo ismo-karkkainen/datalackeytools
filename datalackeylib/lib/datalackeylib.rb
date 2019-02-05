@@ -6,6 +6,7 @@ class DatalackeyProcess
   attr_reader :exit_code, :stdout, :stderr, :stdin, :executable
 
   def initialize(exe, directory, permissions, memory)
+    @exit_code = 0
     if exe.nil?
       exe = DatalackeyProcess.locate_executable(
         'datalackey', [ '/usr/local/libexec', '/usr/libexec' ])
@@ -111,7 +112,8 @@ class PatternAction
       { :ended => [ nil, 'process', 'ended', '?', '?' ] },
       { :error_format => [ nil, 'error', 'format' ] },
       { :version => [ '@', 'version', "", '?' ] },
-      { :done => [ '@', 'done', "" ] }
+      { :done => [ '@', 'done', "" ] },
+      { :child => [ '@', 'run', 'running', '?' ] }
     ]
   }
 
@@ -237,12 +239,15 @@ class DatalackeyIO
     @dataprocess_mutex = Mutex.new
     @data = Hash.new(0)
     @process = { }
+    @children = { }
     @version = { }
     @read_datalackey = Thread.new do
       accum = []
       while true do
         begin
           raw = @from_datalackey.readpartial(32768)
+        rescue IOError
+          break
         rescue EOFError
           break
         end
@@ -295,9 +300,14 @@ class DatalackeyIO
                 when :started
                   @dataprocess_mutex.synchronize { @process[name] = id }
                   actionable.push item
+                when :child
+                  @dataprocess_mutex.synchronize { @children[name] = id }
                 when :ended
                   @dataprocess_mutex.synchronize do
-                    @process.delete(name) if @process[name] == id
+                    if @process[name] == id
+                      @process.delete(name)
+                      @children.delete(name)
+                    end
                     actionable.push item
                   end
                 when :error_format
@@ -327,8 +337,8 @@ class DatalackeyIO
           finish = false
           ca.each do |item|
             case item.category
-            when :return then finish = true
-            when :error then finish = true
+            when :return, 'return' then finish = true
+            when :error, 'error' then finish = true
             when :internal
               case item.action
               when :done
@@ -366,6 +376,10 @@ class DatalackeyIO
     @dataprocess_mutex.synchronize { return @process.clone }
   end
 
+  def launched
+    @dataprocess_mutex.synchronize { return @children.clone }
+  end
+
   def closed?
     return @from_datalackey.closed?
   end
@@ -390,10 +404,10 @@ class DatalackeyIO
     tracker = pattern_action.clone
     tracker.set_identifier(id)
     tracker.command = JSON.generate(command)
-    @tracked_mutex.synchronize {
+    @tracked_mutex.synchronize do
       @tracked[id] = tracker unless id.nil?
       @waiting = id
-    }
+    end
     dump(tracker.command)
     return tracker if id.nil? # There will be no responses.
     @return_mutex.synchronize { @return_condition.wait(@return_mutex) }

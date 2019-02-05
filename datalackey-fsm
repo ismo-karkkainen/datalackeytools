@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+# Licensed under Universal Permissive License. See License.txt.
+
 require 'optparse'
 require 'yaml'
 require 'tempfile'
@@ -565,7 +567,7 @@ class ProcessCommand < Command
 
   def handle(cmd)
     cmd.flatten!
-    cmd.concat($lackey.process.keys) if cmd.length == 1
+    cmd.concat $lackey.launched.keys if cmd.length == 1
     super(cmd)
   end
 end
@@ -614,7 +616,11 @@ class WaitProcessCommand < Command
       $machine.set_error "Not a number: #{cmd[1]}"
       return
     end
-    waited = (2 < cmd.length) ? cmd[2...cmd.length] : $lackey.process.keys
+    if 2 < cmd.length
+      waited = $lackey.launched.keys
+    else
+      waited = cmd[2...cmd.length]
+    end
     while (Time.new <=> deadline) == -1
       sleep(0.2)
       remains = false
@@ -995,12 +1001,18 @@ end
 sig_check = Proc.new { |ct, act, msg, vs| label_signal_check(ct, act, msg, vs) }
 
 if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
-  # Running under datalackey.
+  # Seemingly running under datalackey.
   unless $PERMISSIONS.nil?
     userout "Cannot give --permissions/-p unless running datalackey."
     exit 1
   end
-  userout "Running under datalackey."
+  if STDIN.tty?
+    userout "Not running under datalackey, turning on memory storage."
+    $MEMORY = true
+  end
+end
+
+if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
   $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
   $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
   $lackey = DatalackeyIO.new(
@@ -1026,6 +1038,10 @@ $machine.run('__setup', states)
 
 $lackey_proc.finish
 $lackey.close
+if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+  $lackey_proc.stdout.close
+  STDERR.close
+end
 $lackey.finish
 $lackey_stderr.close
 userout $lackey_stderr.readlines

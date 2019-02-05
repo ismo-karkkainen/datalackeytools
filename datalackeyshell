@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+# Licensed under Universal Permissive License. See License.txt.
+
 # Argument handling and checking
 # datalackey process
 # Presenting command output
@@ -86,7 +88,7 @@ $in_prompt = false
 $output_mutex = Mutex.new
 
 def print_lines(messages)
-  return false if not messages.is_a? Array or not messages.is_a? String or messages.empty?
+  return false if not (messages.is_a? Array or messages.is_a? String) or messages.empty?
   messages = [ messages ] unless messages.is_a? Array
   rows, cols = IO.console.winsize
   cut = []
@@ -772,7 +774,7 @@ class RecallHandler < Handler
   def initialize
     @syntax = {
       :root => [ 'recall', :history_process_id ],
-      :help => { :root => "Fetch last \"run identifier\" related settings from history. Finds the input, output, env, arg, and channel settings that were in effect when last run with given identifier was done. If no identifier is given, last run command identifier is used. Prints the lines found from history." }
+      :help => { :root => "Fetch last \"run identifier\" related settings from history. Finds the input, output, env, arg, channel, and notify settings that were in effect when last run with given identifier was done. If no identifier is given, last run command identifier is used. Prints the lines found from history." }
     }
     register
   end
@@ -800,7 +802,8 @@ class RecallHandler < Handler
     id_given = parts.length == 2
     es = [ '^input[+]?[[:blank:]]+', '^output[+]?[[:blank:]]+',
       '^arg[+]?[[:blank:]]+', '^env[+]?[[:blank:]]+', '^env-clear$',
-      '^channel[[:blank:]]+', "^#{$exit_handler.command_name}" ]
+      '^channel[[:blank:]]+', "^#{$exit_handler.command_name}",
+      '^notify[[:blank:]]+' ]
     es.push('^run[[:blank:]]+' + (id_given ? parts[1] + '[[:blank:]]+' : ''))
     exps = []
     es.each { |e| exps.push Regexp.new(e) }
@@ -814,6 +817,8 @@ class RecallHandler < Handler
     while not candidates.empty? and not candidates.last.start_with? $exit_handler.command_name
       session.push candidates.pop
     end
+    print_until_first(session, [ '^notify[[:blank:]]+data[[:blank:]]' ])
+    print_until_first(session, [ '^notify[[:blank:]]+process[[:blank:]]' ])
     print_until_first(session, [ '^channel[[:blank:]]+in[[:blank:]]' ])
     print_until_first(session, [ '^channel[[:blank:]]+out[[:blank:]]' ])
     print_until_first(session, [ '^channel[[:blank:]]+err[[:blank:]]' ])

@@ -1,5 +1,6 @@
 #!/bin/sh
 
+RV=0
 cd test
 if [ $# -eq 0 ]; then
     for S in ./test-*.sh
@@ -14,6 +15,8 @@ if [ $# -eq 0 ]; then
         ./compare $B.good $B.res
         if [ $? -eq 0 ]; then
             echo "Comparison ok."
+        else
+            RV=1
         fi
     done
 else
@@ -29,6 +32,9 @@ else
         ./compare test-$S.good test-$S.res
         if [ $? -eq 0 ]; then
             echo "Comparison ok."
+        else
+            RV=1
         fi
     done
 fi
+exit $RV

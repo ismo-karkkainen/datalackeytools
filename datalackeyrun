@@ -1,14 +1,13 @@
 #!/usr/bin/env ruby
 
+# Licensed under Universal Permissive License. See License.txt.
+
 # Argument handling and checking
 # datalackey process
 # Main loop
 
 require 'optparse'
-require 'open3'
 require 'json'
-require 'pathname'
-require 'yaml'
 require 'datalackeylib'
 
 
@@ -83,28 +82,27 @@ end
 lackey_stderr = StoringReader.new($lackey_proc.stderr)
 $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil)
 
-run_actions = YAML.load(%q(
----
-return:
-- run_running: [ "@", run, running, "?" ]
-error:
-- error: [ "@", run, error, "*" ]
-- syntax: [ "@", "?", error, argument, invalid ]
-- syntax: [ "@", "?", error, argument, not-integer ]
-- syntax: [ "@", "?", missing, "*" ]
-note:
-- run_error_input_failed: [ "@", run, error, input, failed ]
-- run_child_error_output_format: [ "@", run, error, format ]
-- run_child_error_output_format: [ "@", error, format ]
-- run_terminated: [ "@", run, terminated, "?" ]
-- run_exit: [ "@", run, exit, "?" ]
-- run_signal: [ "@", run, signal, "?" ]
-- run_stop: [ "@", run, stopped, "?" ]
-- run_continue: [ "@", run, continued ]
-- run_closed: [ "@", run, input, closed ]
-bytes:
-- bytes: [ "@", run, bytes, "?", "*" ]
-))
+run_actions = {
+  :return => [ { :run_running => [ '@', 'run', 'running', '?' ] } ],
+  :error => [
+    { :error => [ '@', 'run', 'error', '*' ] },
+    { :syntax => [ '@', '?', 'error', 'argument', 'invalid' ] },
+    { :syntax => [ '@', '?', 'error', 'argument', 'not-integer' ] },
+    { :syntax => [ '@', '?', 'missing', '*' ] }
+  ],
+  :note => [
+    { :run_error_input_failed => [ '@', 'run', 'error', 'input', 'failed' ] },
+    { :run_child_error_output_format => [ '@', 'run', 'error', 'format' ] },
+    { :run_child_error_output_format => [ '@', 'error', 'format' ] },
+    { :run_terminated => [ '@', 'run', 'terminated', '?' ] },
+    { :run_exit => [ '@', 'run', 'exit', '?' ] },
+    { :run_signal => [ '@', 'run', 'signal', '?' ] },
+    { :run_stop => [ '@', 'run', 'stopped', '?' ] },
+    { :run_continue => [ '@', 'run', 'continued' ] },
+    { :run_closed => [ '@', 'run', 'input', 'closed' ] }
+  ],
+  :bytes => [ { :bytes => [ '@', 'run', 'bytes', '?', '*' ] } ]
+}
 
 $output_mutex = Mutex.new
 $output = []
@@ -112,35 +110,30 @@ $quitting = false
 $exit_code = 0
 
 def run_proc(category, action, message, vars)
-  case category.to_s
-  when 'error'
-    $output_mutex.synchronize do
+  $output_mutex.synchronize do
+    case category.to_s
+    when :error
       $output.push "ERROR: #{action} : #{message[3...message.length].join(' ')}"
-    end
-    $quitting = true
-  when 'note'
-    case action.to_s
-    when 'run_error_input_failed'
-      $output_mutex.synchronize { $output.push "Input failed." }
-    when 'run_child_error_output_format'
-      $output_mutex.synchronize { $output.push "Output format error." }
-    when 'run_terminated'
-      $output_mutex.synchronize { $output.push "Terminated." }
       $quitting = true
-    when 'run_exit'
-      $exit_code = vars.last
-      $quitting = true
-    when 'run_signal'
-      $output_mutex.synchronize { $output.push "Signal: #{vars.first}" }
-    when 'run_stop'
-      $output_mutex.synchronize { $output.push "Stopped: #{vars.first}" }
-    when 'run_continue'
-      $output_mutex.synchronize { $output.push "Continued." }
+    when :note
+      case action.to_s
+      when :run_error_input_failed then $output.push "Input failed."
+      when :run_child_error_output_format
+        $output.push "Output format error."
+      when :run_terminated
+        $output.push "Terminated."
+        $quitting = true
+      when :run_exit
+        $exit_code = vars.last
+        $quitting = true
+      when :run_signal then $output.push "Signal: #{vars.first}"
+      when :run_stop then $output.push "Stopped: #{vars.first}"
+      when :run_continue then $output.push "Continued."
+      end
+    when :bytes then $output.push ''.concat(*vars)
     end
-  when 'bytes'
-    $output_mutex.synchronize { $output.push ''.concat(*vars) }
+    return false
   end
-  return []
 end
 
 run_pa = PatternAction.new([ run_actions ],
@@ -148,9 +141,9 @@ run_pa = PatternAction.new([ run_actions ],
 
 # Run the program that was given in the command-line.
 cmd = [ '*', 'run' ]
-cmd.concat [ "in","JSON","stdin","out","JSON","stdout","out","bytes","stderr" ]
-cmd.concat [ "notify","data","notify","process" ]
-cmd.concat [ "program" ]
+cmd.concat [ 'in','JSON','stdin','out','JSON','stdout','out','bytes','stderr' ]
+cmd.concat [ 'notify','data','notify','process' ]
+cmd.concat [ 'program' ]
 cmd.concat argv
 $lackey.send(run_pa, cmd, true)
 
@@ -187,7 +180,7 @@ until $lackey.closed?
   # Here controller has exited.
   procs = $lackey.processes
   if procs.empty?
-    $lackey.close # Causes datalackey to exit. Output closing then exits the loop.
+    $lackey.close # Causes datalackey to exit. Output closing then exits this.
     next
   end
   if terminate_time.nil? # On first quitting, set terminate time and end feeds.
