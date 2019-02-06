@@ -1045,5 +1045,7 @@ end
 $lackey.finish
 $lackey_stderr.close
 userout $lackey_stderr.readlines
-userout("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
+if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+  userout("datalackey exit: #{$lackey_proc.exit_code}")
+end
 exit $machine.variables.fetch('__exitcode', $machine.had_error ? 1 : 0)

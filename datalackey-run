@@ -10,8 +10,9 @@ require 'optparse'
 require 'json'
 require 'datalackeylib'
 
-
 # Argument handling and checking
+
+ENV['POSIXLY_CORRECT'] = '1'
 
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions, :terminate_delay
@@ -26,10 +27,12 @@ class Arguments
 
   def parse
     parser = OptionParser.new do |opts|
-      opts.banner = "Usage: datalackeyrun [options] command params"
+      opts.summary_indent = ''
+      opts.summary_width = 28
+      opts.banner = "Usage: datalackey-run [options] command params"
       opts.separator ""
       opts.separator "Options:"
-      opts.on_tail("-h", "--help", "Print this help and exit.") do
+      opts.on_tail("--help", "Print this help and exit.") do
         puts opts
         exit 0
       end
@@ -40,7 +43,7 @@ class Arguments
       opts.on("--directory [DIR]", "Store data under (working) directory.") do |d|
         @directory = d || ''
       end
-      opts.on("--permissions MODE", [:user, :group, :other], "Use permissions extended to (user, group, other) for files.") do |p|
+      opts.on("--permissions MODE", [:user, :group, :other], "File permissions cover (user, group, other).") do |p|
         @permissions = { :user => "600", :group => "660", :other => "666" }[p]
       end
       opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
@@ -50,9 +53,9 @@ class Arguments
     parser.parse!
     # Perform sanity checks on the values.
     begin
-      @memory, @directory, @permissions =
-        DatalackeyProcess.verify_memory_directory_permissions(
-          @memory, @directory, @permissions)
+      @directory, @permissions, @memory =
+        DatalackeyProcess.verify_directory_permissions_memory(
+          @directory, @permissions, @memory)
       if @terminate_delay.nil?
         @terminate_delay = 5
       else
@@ -111,12 +114,12 @@ $exit_code = 0
 
 def run_proc(category, action, message, vars)
   $output_mutex.synchronize do
-    case category.to_s
+    case category
     when :error
       $output.push "ERROR: #{action} : #{message[3...message.length].join(' ')}"
       $quitting = true
     when :note
-      case action.to_s
+      case action
       when :run_error_input_failed then $output.push "Input failed."
       when :run_child_error_output_format
         $output.push "Output format error."
@@ -132,19 +135,19 @@ def run_proc(category, action, message, vars)
       end
     when :bytes then $output.push ''.concat(*vars)
     end
-    return false
   end
+  false
 end
 
 run_pa = PatternAction.new([ run_actions ],
   [ Proc.new { |ctg, act, msg, vars| run_proc(ctg, act, msg, vars) } ])
 
 # Run the program that was given in the command-line.
-cmd = [ '*', 'run' ]
+cmd = [ "datalackey-run-#{Process.pid}", 'run' ]
 cmd.concat [ 'in','JSON','stdin','out','JSON','stdout','out','bytes','stderr' ]
 cmd.concat [ 'notify','data','notify','process' ]
 cmd.concat [ 'program' ]
-cmd.concat argv
+cmd.concat ARGV
 $lackey.send(run_pa, cmd, true)
 
 # Main loop
@@ -161,7 +164,7 @@ def id_list_message(command, ids)
   return if ids.empty?
   cmd = [ nil, command ] # No need to get replies.
   cmd.concat ids
-  $lackey.dump JSON.generate cmd
+  $lackey.dump(JSON.generate(cmd))
 end
 
 terminate_time = nil
@@ -178,7 +181,7 @@ until $lackey.closed?
   sleep(0.1) unless had_output
   next unless $quitting
   # Here controller has exited.
-  procs = $lackey.processes
+  procs = $lackey.process
   if procs.empty?
     $lackey.close # Causes datalackey to exit. Output closing then exits this.
     next
@@ -197,5 +200,7 @@ $lackey_proc.finish
 $lackey.close
 lackey_stderr.close
 $lackey.finish
-puts("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
+if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+  puts("datalackey exit: #{$lackey_proc.exit_code}")
+end
 exit $exit_code

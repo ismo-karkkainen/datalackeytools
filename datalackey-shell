@@ -20,7 +20,7 @@ require 'io/console'
 require 'datalackeylib'
 
 $version = 1
-history_file_basename = '.datalackeyshell.history'
+history_file_basename = '.datalackey-shell.history'
 history_file_max_lines = 2000
 $echo_lackey_output = false
 $echo_lackey_input = false
@@ -39,7 +39,9 @@ class Arguments
 
   def parse(args)
     parser = OptionParser.new do |opts|
-      opts.banner = "Usage: datalackeyshell [options]"
+      opts.summary_indent = '  '
+      opts.summary_width = 26
+      opts.banner = "Usage: datalackey-shell [options]"
       opts.separator ""
       opts.separator "Options:"
       opts.on("-m", "--memory", "Store data in memory.") do
@@ -58,10 +60,10 @@ class Arguments
         @lackey = e
       end
       opts.on("-p", "--permissions MODE", [:user, :group, :other],
-          "Use permissions extended to (user, group, other) for files.") do |p|
+          "File permissions cover (user, group, other).") do |p|
         @permissions = { :user => "600", :group => "660", :other => "666" }[p]
       end
-      opts.on('-e', '--echo', 'Turn datalackey command and reply encho on.') do
+      opts.on('-e', '--echo', 'Turn datalackey command and reply echo on.') do
         $echo_lackey_output = true
         $echo_lackey_input = true
       end
@@ -1498,5 +1500,7 @@ $lackey.close
 stderr_discarder.close
 $lackey.finish
 puts() unless $exit_handler.exiting
-puts("datalackey exit: #{$lackey_proc.exit_code}") if $lackey_proc.exit_code != 0
+if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+  puts("datalackey exit: #{$lackey_proc.exit_code}")
+end
 exit $exit_handler.code

@@ -422,9 +422,12 @@ class DatalackeyIO
 
   def dump(json_as_string)
     @to_datalackey_mutex.synchronize {
-      @to_datalackey.write json_as_string
-      @to_datalackey.flush
-      @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
+      begin
+        @to_datalackey.write json_as_string
+        @to_datalackey.flush
+        @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
+      rescue Errno::EPIPE
+      end
     }
   end
 

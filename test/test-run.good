@@ -1,0 +1,512 @@
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/set-print.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: set-test-setup
+Command: ["set", "threelevel", "twolevel"]
+Command: ["set", "twolevel", "onelevel"]
+Command: ["set", "onelevel", "lvl1"]
+State: set-test
+Command: ["print", "onelevel", "twolevel", "threelevel"]
+Expanded: ["print", "lvl1", "lvl1", "lvl1"]
+lvl1 lvl1 lvl1
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/run-exit.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: run-test
+Command: ["run", "sleeper", "program", "sleep", "1"]
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/launch-signal.state
+####CODE 1
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: launch-signal
+Command: ["launch", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
+Command: ["wait_signal"]
+failing run exit 2
+Signal: error
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/launch-terminate.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: launch-test
+Command: ["launch", "sleeper", "program", "sleep", "10"]
+Command: ["set", "terminate_delay", "2"]
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", "2"]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/launch-wait.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: launch-test
+Command: ["launch", "sleeper", "program", "sleep", "3"]
+Command: ["set", "terminate_delay", "1"]
+Command: ["wait_process", "4", "sleeper"]
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", "1"]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 5 fsm/feed-test.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: feed-test
+Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
+["initial", "run", "end-feed", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test", "label_and_value"]
+Command: ["launch", "fed", "pipes", "program", "feed-test"]
+Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test"]
+Command: ["wait_data", "label_and_value"]
+Command: ["feed", "fed", "input", "label_and_value", "renamed"]
+["feed", "fed", "input", "label_and_value", "renamed"]
+Command: ["feed", "fed", "direct", "123", "direct_value"]
+["feed", "fed", "direct", "123", "direct_value"]
+Command: ["close", "fed"]
+["end-feed", "fed"]
+Command: ["wait_data", "1", "2"]
+Command: ["serial", "label_and_value", "1", "2"]
+label_and_value : 1
+1 : 2
+2 : 3
+State: __terminate_all
+Command: ["close"]
+["end-feed"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/ruby.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: ruby-test
+Command: ["set", "onevar", "value1"]
+Command: ["set", "twovar", "value2"]
+Command: {"ruby"=>"lines = []\n$machine.variables.keys.sort.each do |key|\n  next unless key == 'onevar' or key == 'twovar'\n  lines.push \"\#{key} => \#{$machine.variables[key].to_s}\"\nend\nuserout lines\n"}
+onevar => value1
+twovar => value2
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/shell.state
+####CODE 1
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: shell-test
+Command: ["set", "shellscript", "echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"]
+Command: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"shellscript"}
+Expanded: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Command: ["print", "StdOut", "stdout-receiving-variable"]
+Expanded: ["print", "StdOut", "To stdout\narg1 arg2"]
+StdOut To stdout
+arg1 arg2
+Command: ["print", "StdErr", "stderr-receiving-variable"]
+Expanded: ["print", "StdErr", "To stderr"]
+StdErr To stderr
+Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
+Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"shellscript"}
+Expanded: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Command: ["print", "StdOut", "stdout-receiving-variable"]
+StdOut stdout-receiving-variable
+Command: ["print", "StdErr", "stderr-receiving-variable"]
+StdErr stderr-receiving-variable
+Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
+Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
+Shell exit: 1
+Signal: error
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/rename-delete.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: rename-delete-test
+Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["wait_data", "label"]
+Command: ["rename", "label", "new_name"]
+Command: ["wait_data", "new_name"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+new_name
+Command: {"ruby"=>"$machine.set_error('Not found.') unless $lackey.data.has_key? 'new_name'"}
+Command: ["delete", "new_name"]
+Command: ["run", "delay", "program", "sleep", "1"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+
+Command: {"ruby"=>"$machine.set_error('Found.') if $lackey.data.has_key? 'new_name'"}
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/assert_var.state
+####CODE 1
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: test
+Command: ["set", "exists"]
+Command set too short: 2 < 3
+Signal: error
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/default.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: test
+Command: ["set", "exists", "1"]
+Command: ["default", "exists", "2"]
+Command: ["default", "unset", "3"]
+Command: ["assert_var", "exists"]
+Command: ["assert_var", "unset"]
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/include-delete.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: startup
+Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["wait_data", "label"]
+State: rename-test
+Command: ["rename", "label", "new_name"]
+Command: ["wait_data", "new_name"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+new_name
+Command: {"ruby"=>"$machine.set_error('Not found.') unless $lackey.data.has_key? 'new_name'"}
+State: delete-test
+Command: ["delete", "new_name"]
+Command: ["run", "delay", "program", "sleep", "1"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+
+Command: {"ruby"=>"$machine.set_error('Found.') if $lackey.data.has_key? 'new_name'"}
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/include-loop.state
+####CODE 2
+####OUT
+Include loop: include-loop.state from fsm
+ .. fsm/include-loop.state : 0
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 --warn fsm/include-overwrite.state
+####CODE 0
+####OUT
+startup replaced by fsm/included-overwriter.state : 0
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: startup
+Command: ["set", "overwriter", "overwriter-value-set"]
+Transition to unknown state: verify
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 --error fsm/include-overwrite.state
+####CODE 4
+####OUT
+startup replaced by fsm/included-overwriter.state : 0
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/file-not-found
+####CODE 2
+####OUT
+No such file or directory @ realpath_rec - fsm/file-not-found
+Could not find fsm/file-not-found from /Users/iak/Projects/datatools/datalackeyshell/test
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/bad-file
+####CODE 2
+####OUT
+Not a top level array: fsm/bad-file from /Users/iak/Projects/datatools/datalackeyshell/test
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/first-multi.state
+####CODE 2
+####OUT
+First state mapping with multiple states is ambiguous: fsm/first-multi.state : 0
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/include-ignore.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: startup
+Command: ["set", "overwriter", "overwriter-value-set"]
+State: verify
+Command: ["print", "overwriter"]
+Expanded: ["print", "overwriter-value-set"]
+overwriter-value-set
+Command: ["print", "ignored"]
+ignored
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/multi.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: state1
+Command: ["print", "first"]
+first
+State: state2
+Command: ["assert_var", "causes_error"]
+Not set: causes_error
+Signal: error
+State: error
+Command: ["print", "got", "an", "error"]
+got an error
+Command: ["signal", "loop-prevention"]
+Signal: loop-prevention
+State: normal
+Command: ["print", "Outside", "multi-state"]
+Outside multi-state
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/extend.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: initial
+Command: {"ruby"=>"handler = Command.new('extension')\nhandler_meta = class << handler; self; end\nhandler_meta.send(:define_method, :handle) do |cmd|\n  cmd.flatten!\n  if cmd.length == 1\n    userout \"No parameters.\"\n    return\n  end\n  userout \"Extension: \#{cmd[1...cmd.length].join(' ')}\"\nend\n"}
+Command: ["print", "Now using the new method."]
+Now using the new method.
+Command: ["extension"]
+No parameters.
+Command: ["extension", "with", "parameters"]
+Extension: with parameters
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/extend-load.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: initial
+Command: {"ruby"=>"d = File.dirname($machine.state_source)\nload(File.join(d, 'extend-load.rb'))\nExtensionCommand.new\n"}
+Command: ["print", "Using extension command."]
+Using extension command.
+Command: ["extension"]
+No parameters.
+Command: ["extension", "with", "parameters"]
+Extension: with parameters
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/jump.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: setup
+Command: ["set", "targetname", "target"]
+Command: ["jump", "targetname"]
+Expanded: ["jump", "target"]
+Signal: __jump
+State: target
+Command: ["print", "Jumped", "to", "target."]
+Jumped to target.
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/stack-jump.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: setup
+Command: ["jump", "target"]
+Signal: __jump
+State: target
+Command: ["print", "Jumped", "to", "target."]
+Jumped to target.
+Command: ["set", "return_jumps", "final"]
+Command: ["jump", "subroutine-begin"]
+Signal: __jump
+State: subroutine-begin
+Command: ["assert_var", "return_jumps"]
+Command: ["print", "In", "subroutine", "begin."]
+In subroutine begin.
+Command: ["push", "return_jumps", "subroutine-end"]
+Command: ["jump", "sub2routine"]
+Signal: __jump
+State: sub2routine
+Command: ["assert_var", "return_jumps"]
+Command: ["print", "In", "sub2routine."]
+In sub2routine.
+Command: ["pop", "return_jumps", "_temp"]
+Command: ["jump", "_temp"]
+Expanded: ["jump", "subroutine-end"]
+Signal: __jump
+State: subroutine-end
+Command: ["print", "In", "subroutine", "end."]
+In subroutine end.
+Command: ["pop", "return_jumps", "_temp"]
+Command: ["jump", "_temp"]
+Expanded: ["jump", "final"]
+Signal: __jump
+State: final
+Command: ["print", "Final", "state."]
+Final state.
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
+####COMMAND datalackey-run -m datalackey-fsm --stdout -f 4 fsm/label2signal.state
+####CODE 0
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: label-signal
+Command: ["launch", "producer", "out", "JSON", "stdout", "program", "echo", "{\"out\":1}"]
+Command: ["print", "Waiting."]
+Waiting.
+Command: ["wait_signal"]
+Signal: exit
+State: exit
+Command: ["print", "Got", "signal."]
+Got signal.
+State: __terminate_all
+Command: ["close"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
