@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name        = 'datalackeylib'
-  s.version     = '0.1.0'
-  s.date        = '2019-01-16'
+  s.version     = '0.2.0'
+  s.date        = '2019-03-16'
   s.summary     = "Classes and methods for using datalackey."
   s.description = %q(
 Classes and methods for using datalackey from Ruby programs.

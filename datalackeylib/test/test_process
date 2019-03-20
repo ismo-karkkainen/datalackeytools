@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+
+# Licensed under Universal Permissive License. See LICENSE.txt.
+
+require File.join(File.expand_path(File.dirname($0)), '../lib/datalackeylib.rb')
+
+STDOUT.puts "ok"
