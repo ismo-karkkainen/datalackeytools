@@ -52,7 +52,7 @@ def DatalackeyProcess.options_for_OptionParser(parser, separator,
   end
   unless dir_callable.nil?
     parser.on("-d", "--directory [DIR]", "Store data under (working) directory.") do |d|
-      dir_callable.call(d || '')
+      dir_callable.call(d || Dir.pwd)
     end
   end
   unless perm_callable.nil?
@@ -98,9 +98,9 @@ def DatalackeyProcess.verify_directory_permissions_memory(
       elsif (File.umask & 070) == 0
         permissions = '660'
       else
-        permissions = "600"
+        permissions = '600'
       end
-    elsif permissions != '600' and permission != '660' and permissions != '666'
+    elsif permissions != '600' and permissions != '660' and permissions != '666'
       raise ArgumentError.new "Permissions not in {600, 660, 666}."
     end
   end

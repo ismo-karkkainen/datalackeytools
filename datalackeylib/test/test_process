@@ -4,4 +4,166 @@
 
 require File.join(File.expand_path(File.dirname($0)), '../lib/datalackeylib.rb')
 
-STDOUT.puts "ok"
+require 'optparse'
+require 'minitest/autorun'
+
+class TestOptions < Minitest::Test
+  def setup
+    @args = { '--lackey' => 'executable',
+      '--memory' => true,
+      '--directory' => 'directory',
+      '--permissions' => { '600' => :user, '660' => :group, '666' => :other },
+      '--echo' => true
+    }
+  end
+
+  def test_no_callables
+    @args.each_pair do |arg, param|
+      failed = false
+      begin
+        parser = OptionParser.new
+        DatalackeyProcess.options_for_OptionParser(parser, nil, nil, nil, nil, nil, nil)
+        parser.parse! [ arg ]
+      rescue OptionParser::InvalidOption
+        failed = true
+      end
+      assert(failed, "Failed to detect invalid arg: #{arg}")
+    end
+  end
+
+  def get_parser
+    @lackey = nil
+    @memory = nil
+    @directory = nil
+    @permissions = nil
+    @echo = nil
+    parser = OptionParser.new
+    DatalackeyProcess.options_for_OptionParser(parser, nil,
+      Proc.new { |arg| @lackey = arg },
+      Proc.new { |arg| @memory = arg },
+      Proc.new { |arg| @directory = arg },
+      Proc.new { |arg| @permissions = arg },
+      Proc.new { |arg| @echo = arg })
+    return parser
+  end
+
+  def test_all_callables
+    parser = get_parser
+    av = []
+    pk = nil
+    @args.each_pair do |arg, param|
+      av.push arg
+      if param.is_a? Array
+        av.push param.first.to_s
+      elsif param.is_a? String
+        av.push param
+      elsif param.is_a? Hash
+        pk = param.keys.sort.first
+        av.push param[pk].to_s
+      end
+    end
+    parser.parse! av
+    assert(@lackey == @args['--lackey'], "Lackey is #{@lackey} and not #{@args['--lackey']}")
+    assert(@memory == @args['--memory'], "Memory is #{@memory} and not #{@args['--mmeory']}")
+    assert(@directory == @args['--directory'], "Directory is #{@directory} and not #{@args['--directory']}")
+    assert(@permissions == pk, "Permissions is #{@permissions} and not #{pk}")
+    assert(@echo == @args['--echo'], "Echo is #{@echo} and not #{@args['--echo']}")
+  end
+
+  def test_directory
+    get_parser.parse! [ '--directory' ]
+    assert(@directory == Dir.pwd, "Directory is #{@directory} and not #{Dir.pwd}")
+    get_parser.parse! [ '--directory', @args['--directory'] ]
+    assert(@directory == @args['--directory'], "Directory is #{@directory} and not #{@args['--directory']}")
+  end
+
+  def test_permissions
+    @args['--permissions'].each_pair do |result, value|
+      get_parser.parse! [ '--directory', '--permissions', value ]
+      assert(@permissions == result, "Permissions is #{@permissions} and not #{result}")
+    end
+  end
+end
+
+class TestLocate < Minitest::Test
+  # Either datalackey has been installed or not.
+  def setup
+    @exefull = File.expand_path($0)
+    @exebase = File.basename(@exefull)
+  end
+
+  def test_exe_given
+    exe = DatalackeyProcess.locate_executable(@exefull)
+    assert(@exefull == exe, "Failed to detect self as executable.")
+  end
+
+  def test_exe_find_self
+    exe = DatalackeyProcess.locate_executable(@exebase, [ File.dirname(@exefull) ])
+    assert(@exefull == exe, "Failed to find #{@exefull}, found #{exe}")
+    # Once without array.
+    exe = DatalackeyProcess.locate_executable(@exebase, File.dirname(@exefull))
+    assert(@exefull == exe, "Failed to find #{@exefull}, found #{exe}")
+  end
+
+  def test_exe_not_found
+    exe = DatalackeyProcess.locate_executable(@exebase)
+    assert(exe.nil?, "Found #{exe} when not supposed to.")
+  end
+end
+
+class TestVerify < Minitest::Test
+  def setup
+    @orig = Dir.pwd
+    @exe = File.expand_path($0)
+    @full = File.dirname(@exe)
+    Dir.chdir(@full)
+    @dir = File.join('..', File.basename(@full))
+    @umask = File.umask
+  end
+
+  def test_not_both
+    [ [@dir, '600' ], [ nil, '600' ], [ @dir, nil ] ].each do |pair|
+      failed = false
+      begin
+        DatalackeyProcess.verify_directory_permissions_memory(pair.first, pair.last, true)
+      rescue ArgumentError
+        failed = true
+      end
+      assert(failed, "Failed to detect directory and memory together.")
+    end
+  end
+
+  def test_dirs
+    [ [ @dir, @dir ], [ nil, @full ] ].each do |pair|
+      dir, perm, mem = DatalackeyProcess.verify_directory_permissions_memory(pair.first, nil, nil)
+      assert(dir == pair.last, "Found #{dir} and not #{pair.last} with #{pair.first}")
+    end
+    failed = false
+    begin
+      DatalackeyProcess.verify_directory_permissions_memory(@exe, nil, nil)
+    rescue ArgumentError
+      failed = true
+    end
+    assert(failed, "Failed to detect invalid directory.")
+  end
+
+  def test_perms
+    [ [ 0222, '600' ], [ 022, '600' ], [ 02, '660' ], [ 0, '666' ] ].each do |pair|
+      File.umask(pair.first)
+      dir, perm, mem = DatalackeyProcess.verify_directory_permissions_memory(nil, nil, nil)
+      assert(perm == pair.last, "Permissions #{perm} is not #{pair.last}")
+    end
+    failed = false
+    begin
+      DatalackeyProcess.verify_directory_permissions_memory(nil, 'invalid', nil)
+    rescue ArgumentError
+      failed = true
+    end
+    assert(failed, "Failed to detect bad permissions value.")
+  end
+
+  def teardown
+    Dir.chdir(@orig)
+    File.umask(@umask)
+  end
+end
