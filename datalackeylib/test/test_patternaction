@@ -1,0 +1,91 @@
+#!/usr/bin/env ruby
+
+# Licensed under Universal Permissive License. See LICENSE.txt.
+
+require File.join(File.expand_path(File.dirname($0)), '../lib/datalackeylib.rb')
+
+require 'optparse'
+require 'minitest/autorun'
+
+class TestInternal < Minitest::Test
+  def test_internals_match
+    pa = PatternAction.new([])
+    [ [ [ 'id', 'error', 'missing' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'missing', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'missing', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'not-string' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'not-string', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'not-string', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'not-string-null' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'not-string-null', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'not-string-null', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'pairless' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'pairless', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'pairless', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'unexpected' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'unexpected', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'unexpected', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'unknown' ], [ :error, :syntax ], 0 ],
+      [ [ 'id', 'error', 'unknown', 'x' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'unknown', 'x', 'x' ], [ :error, :syntax ], 2 ],
+      [ [ 'id', 'error', 'command', 'missing', '1' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'command', 'not-string', '1' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'error', 'command', 'unknown', '1' ], [ :error, :syntax ], 1 ],
+      [ [ nil, 'error', 'identifier', '1' ], [ :error, :user_id ], 1 ],
+      [ [ nil, 'error', 'format' ], [ :error, :format ], 0 ],
+      [ [ nil, 'data', 'stored', '1', '1' ], [ :stored ], 2 ],
+      [ [ nil, 'data', 'deleted', '1', '1' ], [ :deleted ], 2 ],
+      [ [ nil, 'data', 'error', '1', '1' ], [ :data_error ], 2 ],
+      [ [ nil, 'process', 'started', '1', '1' ], [ :started ], 2 ],
+      [ [ nil, 'process', 'ended', '1', '1' ], [ :ended ], 2 ],
+      [ [ 'id', 'version', "", '1' ], [ :version ], 1 ],
+      [ [ 'id', 'done', "" ], [ :done ], 0 ],
+      [ [ 'id', 'run', 'running', '1' ], [ :child ], 1 ]
+    ].each do |msg, expected, len|
+      c = pa.clone
+      c.set_identifier('id')
+      act, vars = c.best_match(msg)
+      assert(!act.nil?, "No match from internal for #{msg}")
+      assert(act.length == 1, "Matched several actions: #{act}")
+      act = act.first
+      assert(act.first == c.internal, "First element is #{act.first} and not internal identifier: #{c.internal}")
+      act = act[1...act.length] # Get rid of internal identifier.
+      assert(act.length == expected.length, "Actions #{act} != expected #{expected} for #{msg}")
+      act.each_index do |k|
+        assert(act[k] == expected[k], "Act[#{k}] == #{act[k]} != expected #{expected[k]}")
+      end
+      assert(vars.length == len, "Variable array length #{vars.length} != #{len}")
+      arbitrary = false
+      vars.each do |v|
+        arbitrary = (arbitrary || v == 'x')
+        assert(v == '1' || (arbitrary && v == 'x'), "Not variable value or single value after arbitrary number of arguments: #{v}")
+      end
+    end
+  end
+
+  def test_internal_mismatch_vars
+    pa = PatternAction.new([])
+    [ [ 'id', 'error', 'command', 'missing', '1' ],
+      [ 'id', 'error', 'command', 'not-string', '1' ],
+      [ 'id', 'error', 'command', 'unknown', '1' ],
+      [ nil, 'error', 'identifier', '1' ],
+      [ nil, 'data', 'stored', '1', '1' ],
+      [ nil, 'data', 'deleted', '1', '1' ],
+      [ nil, 'data', 'error', '1', '1' ],
+      [ nil, 'process', 'started', '1', '1' ],
+      [ nil, 'process', 'ended', '1', '1' ],
+      [ 'id', 'version', "", '1' ],
+      [ 'id', 'run', 'running', '1' ],
+    ].each do |msg|
+      c = pa.clone
+      c.set_identifier('id')
+      last = msg.pop
+      act, vars = c.best_match(msg) # One too few.
+      assert(act.nil? && vars.nil?, "Found match for #{msg} when should not: #{act} and #{vars}")
+      msg.push(last, last)
+      act, vars = c.best_match(msg) # One too much.
+      assert(act.nil? && vars.nil?, "Found match for #{msg} when should not: #{act} and #{vars}")
+    end
+  end
+
+end
