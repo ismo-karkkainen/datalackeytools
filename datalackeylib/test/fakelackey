@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+
+# Licensed under Universal Permissive License. See LICENSE.txt.
+
+# Args: count str str ...
+
+if ARGV.length == 0
+  STDERR.puts %Q(
+Usage: #{File.basename($0)} count str1 str2 ...
+  For count times, reads a line and outputs one argument string.
+  After that prints out all remaining lines and exits.
+  For use with DatalackeyIO testing, hence waits for version command and outputs
+  the reply and done commands automatically before considering arguments.
+
+)
+  exit 1
+end
+
+count = Integer(ARGV[0])
+outs = (ARGV.length > 1) ? ARGV[1...ARGV.length] : []
+if outs.length < count
+  STDERR.puts "Count #{count} greater than number of string arguments #{outs.length}"
+  exit 1
+end
+
+v = '[0,"version","",{"datalackey":1,"interface":1,"commands":{"storage-info":["id","storage-info"],"get":["id","get","string,..."],"delete":["id","delete","string,..."],"rename":["id","rename","string,string,..."],"no-op":["id","no-op"],"version":["id","version"],"run":{"<run>":["id","run","<run-subcommands>"],"<run-subcommands>":[["<run-subcommand>","<run-subcommands>"],["<run-subcommand>"]],"<run-subcommand>":["<input>","<direct>","<env>","<env-clear>","<output>","<output-prefix>","<output-postfix>","<in>","<out>","<notify>","<end-feed>","<change-directory>","<program>"],"<input>":["input","source-label","target-name"],"<direct>":["direct","value-string|integer|null","target-name"],"<env>":["env","variable-name","value-string|integer|null"],"<env-clear>":["env-clear"],"<output>":["output","result-name","label|null"],"<output-prefix>":["output-prefix","prefix-for-unmapped-result-name"],"<output-postfix>":["output-postfix","unmapped-result-name-postfix"],"<in>":["in","JSON","stdin"],"<out>":["out","JSON|bytes","stdout|stderr"],"<notify>":["notify","data|process"],"<end-feed>":["end-feed"],"<change-directory>":["change-directory","directory"],"<program>":["program","executable"]},"feed":{"<feed>":["id","feed","string-id","<feed-subcommands>"],"<feed-subcommands>":[["<feed-subcommand>","<feed-subcommands>"],["<feed-subcommand>"]],"<feed-subcommand>":["<input>","<direct>"],"<input>":["input","source-label","target-name"],"<direct>":["direct","value-string|integer|null","target-name"]},"end-feed":["id","end-feed","string|integer|null,..."],"terminate":["id","terminate","string|integer|null,..."]}}]'
+
+STDIN.readpartial(32768) # Initial version command.
+STDOUT.puts v # And replies.
+STDOUT.flush
+STDOUT.puts '[0,"done",""]'
+STDOUT.flush
+
+outs.each do |out|
+  begin
+    STDIN.readpartial(32768) if count > 0
+  rescue EOFError
+    exit 1
+  end
+  count -= 1
+  STDOUT.puts out
+  STDOUT.flush
+end

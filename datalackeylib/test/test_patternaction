@@ -4,7 +4,6 @@
 
 require File.join(File.expand_path(File.dirname($0)), '../lib/datalackeylib.rb')
 
-require 'optparse'
 require 'minitest/autorun'
 
 class TestInternal < Minitest::Test
@@ -88,4 +87,48 @@ class TestInternal < Minitest::Test
     end
   end
 
+  def test_good_mapping
+    patt = [ 'id', 'word' ]
+    map = {
+      :arr => [ { :patt => patt }, [ patt ], [], patt ],
+      :map => { :arr => [], :map => { :patt => patt }, :patt => patt },
+      :arr2 => [ [ { :map => patt, :marr => [ patt, patt ] } ] ],
+      :marr => [ patt, [ 'id', 'word2' ] ]
+    }
+    pa = PatternAction.new([ map ], [], 'id')
+    c = pa.clone
+    patt[0] = 'ident'
+    c.set_identifier(patt[0])
+    act, vars = c.best_match(patt)
+    exp = [ [ :arr, :patt ], [ :arr ], [ :map, :map, :patt ], [ :map, :patt ],
+      [ :arr2, :map ], [ :arr2, :marr ], [ :marr ] ]
+    assert(act.length == exp.length, "Matched has unexpected count #{act.to_s}")
+    exp.each do |a|
+      assert(act.include?(a), "Not found: #{a} in #{act.to_s}")
+    end
+    patt = [ c.identifier, 'word2' ]
+    act, vars = c.best_match(patt)
+    assert(act.length == 1, "Matched has more than 1: #{act}")
+    act = act.first
+    assert(act.length == 1 && act.first == :marr, "Unexpected: #{act.to_s}")
+    patt = []
+    act, vars = c.best_match(patt)
+    exp = [ [ :arr ], [ :map, :arr ] ]
+    assert(act.length == exp.length, "Matched has unexpected count #{act.to_s}")
+    exp.each do |a|
+      assert(act.include?(a), "Not found: #{a} in #{act.to_s}")
+    end
+  end
+
+  def test_bad_mapping
+    [ { :patt => 5 }, { :patt => 'str' }, [ 1 ], 'str' ].each do |bad|
+      failed = false
+      begin
+        pa = PatternAction.new([ bad ])
+      rescue ArgumentError
+        failed = true
+      end
+      assert(failed, "Bad mapping detect failed: #{bad}")
+    end
+  end
 end

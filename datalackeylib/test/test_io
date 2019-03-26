@@ -1,0 +1,95 @@
+#!/usr/bin/env ruby
+
+# Licensed under Universal Permissive License. See LICENSE.txt.
+
+$here = File.expand_path(File.dirname($0))
+require File.join($here, '../lib/datalackeylib.rb')
+
+require 'minitest/autorun'
+require 'json'
+
+class FakelackeyProcess
+  attr_reader :exit_code, :stdout, :stderr, :stdin, :executable
+
+  def initialize(arguments)
+    @exit_code = 0
+    @executable = File.join($here, 'fakelackey')
+    raise ArgumentError.new('fakelackey not found') unless File.exist?(@executable) and File.executable?(@executable)
+    args = [ @executable ]
+    args.concat arguments
+    @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*args)
+  end
+
+  def finish
+    @stdin.close
+    @wait_thread.join
+    @exit_code = @wait_thread.value.exitstatus
+  end
+end
+
+class TestIO < Minitest::Test
+  def setup
+    @v = '[0,"version","",{"datalackey":1,"interface":1,"commands":{"storage-info":["id","storage-info"],"get":["id","get","string,..."],"delete":["id","delete","string,..."],"rename":["id","rename","string,string,..."],"no-op":["id","no-op"],"version":["id","version"],"run":{"<run>":["id","run","<run-subcommands>"],"<run-subcommands>":[["<run-subcommand>","<run-subcommands>"],["<run-subcommand>"]],"<run-subcommand>":["<input>","<direct>","<env>","<env-clear>","<output>","<output-prefix>","<output-postfix>","<in>","<out>","<notify>","<end-feed>","<change-directory>","<program>"],"<input>":["input","source-label","target-name"],"<direct>":["direct","value-string|integer|null","target-name"],"<env>":["env","variable-name","value-string|integer|null"],"<env-clear>":["env-clear"],"<output>":["output","result-name","label|null"],"<output-prefix>":["output-prefix","prefix-for-unmapped-result-name"],"<output-postfix>":["output-postfix","unmapped-result-name-postfix"],"<in>":["in","JSON","stdin"],"<out>":["out","JSON|bytes","stdout|stderr"],"<notify>":["notify","data|process"],"<end-feed>":["end-feed"],"<change-directory>":["change-directory","directory"],"<program>":["program","executable"]},"feed":{"<feed>":["id","feed","string-id","<feed-subcommands>"],"<feed-subcommands>":[["<feed-subcommand>","<feed-subcommands>"],["<feed-subcommand>"]],"<feed-subcommand>":["<input>","<direct>"],"<input>":["input","source-label","target-name"],"<direct>":["direct","value-string|integer|null","target-name"]},"end-feed":["id","end-feed","string|integer|null,..."],"terminate":["id","terminate","string|integer|null,..."]}}]'
+    @done = '[0,"done",""]'
+  end
+
+  def fake_io(fakeargs, echo = false)
+    notif = nil
+    echoer = nil
+    if echo
+      notif = Proc.new { |act, msg, vars| STDOUT.puts(act.to_s, msg.to_s) }
+      echoer = Proc.new { |json| STDOUT.puts json }
+    end
+    fake = FakelackeyProcess.new(fakeargs)
+    err = StoringReader.new(fake.stderr)
+    io = DatalackeyIO.new(fake.stdin, fake.stdout, notif, echoer, echoer)
+    while not io.version.has_key? 'datalackey'
+      sleep(0.25)
+    end
+    return [ fake, err, io ]
+  end
+
+  def end_io(fake, err, io)
+    fake.finish
+    io.close
+    io.finish
+    err.close
+    lines = err.readlines
+    assert(lines.length == 0, "Error output: #{lines.to_s}")
+  end
+
+  def test_version
+    fake, err, io = fake_io([ '0' ])
+    v = JSON.parse(@v)
+    vdl = v[3]['datalackey']
+    vif = v[3]['interface']
+    assert(io.version['datalackey'] == vdl, "Wrong datalackey version #{io.version['datalackey']} != #{vdl}")
+    assert(io.version['interface'] == vif, "Wrong interface version #{io.version['interface']} != #{vif}")
+    end_io(fake, err, io)
+  end
+
+  def test_noop_return
+    fake, err, io = fake_io([ '1', '[1,"no-op",""]', '[1,"done",""]' ])
+    pa = PatternAction.new([ { :return => [ '@', 'no-op', '' ] } ],
+      [ Proc.new { |act, msg, vars| assert(act.first == :return, "Not return.") } ])
+    cmd = [1,'no-op']
+    tr = io.send(pa, cmd, true)
+    assert(tr.status, "Status not true.")
+    j = JSON.generate(cmd)
+    assert(tr.command == j, "Command #{tr.command} not #{j}")
+    assert(tr.exit.length == 1 && tr.exit.first.length == 1 && tr.exit.first[0] == :return, "Not [[:return]] but #{tr.exit}")
+    assert(tr.identifier == cmd.first, "Identifier not #{cmd.first} but #{tr.identifier}")
+    end_io(fake, err, io)
+  end
+
+  def test_noop_error
+    fake, err, io = fake_io([ '1', '[1,"no-op",""]', '[1,"done",""]' ])
+    pa = PatternAction.new([ { :error => [ '@', 'no-op', '' ] } ],
+      [ Proc.new { |act, msg, vars| assert(act.first == :error, "Not error.") } ])
+    cmd = ['no-op']
+    tr = io.send(pa, cmd)
+    assert(!tr.status, "Status not false.")
+    assert(tr.exit.length == 1 && tr.exit.first.length == 1 && tr.exit.first[0] == :error, "Not [[:error]] but #{tr.exit}")
+    end_io(fake, err, io)
+  end
+end
