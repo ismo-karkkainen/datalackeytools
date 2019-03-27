@@ -126,6 +126,7 @@ end
 
 
 class PatternAction
+  # Contains mappings needed for handling nil and generic messages.
   @@internal_map = {
     :error => {
       :syntax => [
@@ -183,6 +184,7 @@ class PatternAction
       unless item.first.is_a?(Array) or item.first.is_a?(Hash)
         # item is a pattern.
         raise ArgumentError.new('Pattern-array must be under action.' + item.to_s) if actionlist.empty?
+        return unless item.first == @identifier
         wildcards = false
         pattern = []
         item.each do |element|
@@ -294,13 +296,16 @@ class DatalackeyIO
     @from_datalackey = from_datalackey
     @identifier = 0
     @tracked_mutex = Mutex.new
-    @tracked = { nil => PatternAction.new([], [], nil) }
+    pa = PatternAction.new([], [], nil)
+    pa.set_identifier(nil)
+    @tracked = { pa.identifier => pa }
     @tracked.default = nil
     @waiting = nil
     @return_mutex = Mutex.new
     @return_condition = ConditionVariable.new
     @dataprocess_mutex = Mutex.new
     @data = Hash.new(0)
+    @data.default = 0
     @process = { }
     @children = { }
     @version = { }

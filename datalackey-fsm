@@ -7,7 +7,6 @@ require 'yaml'
 require 'tempfile'
 require 'datalackeylib'
 
-
 $CMDOUT = STDOUT
 $USEROUT = STDERR
 $OVERWRITE_ACTION = nil
@@ -28,10 +27,6 @@ parser = OptionParser.new do |opts|
   opts.banner = "Usage: datalackey-fsm [options] state-files..."
   opts.separator ""
   opts.separator "Options:"
-  opts.on_tail('-h', '--help', 'Print this help and exit.') do
-    $USEROUT.puts opts
-    exit 0
-  end
   opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
     $CMDOUT = STDOUT
     $USEROUT = STDERR
@@ -43,6 +38,10 @@ parser = OptionParser.new do |opts|
   opts.on('-q', '--quiet', 'Suppress normal command output.') do
     $QUIET = true
   end
+  opts.on('-h', '--help', 'Print this help and exit.') do
+    $USEROUT.puts opts
+    exit 0
+  end
   opts.separator 'Options for error checking and tracking execution:'
   opts.on('--warn', 'Print warning when state is overwritten.') do
     $OVERWRITE_ACTION = :warn
@@ -53,23 +52,14 @@ parser = OptionParser.new do |opts|
   opts.on('-f', '--follow [LEVEL]', Integer, 'Print state/signal/command.') do |level|
     $FOLLOW = level
   end
-  opts.separator 'Options for case where this process runs datalackey:'
-  opts.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
-    $LACKEY = e
-  end
-  opts.on("-m", "--memory", "Store data in memory.") { $MEMORY = true }
-  opts.on("-d", "--directory [DIR]",
-      "Store data under (working) directory.") do |d|
-    $DIRECTORY = d || ''
-  end
-  opts.on("-p", "--permissions MODE", [:user, :group, :other],
-      "File permissions cover (user, group, other).") do |p|
-    $PERMISSIONS = { :user => "600", :group => "660", :other => "666" }[p]
-  end
-  opts.on('--echo', 'Echo communication with datalackey.') do
-    $ECHO = true
-  end
 end
+
+DatalackeyProcess.options_for_OptionParser(parser, true,
+    Proc.new { |arg| $LACKEY = arg },
+    Proc.new { |arg| $MEMORY = arg },
+    Proc.new { |arg| $DIRECTORY = arg },
+    Proc.new { |arg| $PERMISSIONS = arg },
+    Proc.new { |arg| $ECHO = arg })
 parser.parse!
 
 if ARGV.empty?
@@ -279,11 +269,11 @@ class Machine
 end
 $machine = Machine.new
 
-$signal_sender = Proc.new do |category, action, message, vars|
-  case category
+$signal_sender = Proc.new do |action, message, vars|
+  case action.first
   when :error then $machine.set_error(message.join(' '))
-  when :exit
-    if action == :code and vars.first != 0
+  when :exitcode
+    if vars.first != 0
       $machine.set_error(message.join(' '))
     end
     true
@@ -453,40 +443,40 @@ PopCommand.new
 
 class RunBase < Command
   @@actions_run_common = {
-    :error => [
-      { :args_missing => [ "@", "run", "error", "missing", "*" ] },
-      { :syntax => [ "@", "run", "error", "?", "argument", "unknown" ] },
-      { :syntax => [ "@", "run", "error", "?", "duplicate", "?" ] },
-      { :command_error => [ "@", "run", "error", "*" ] },
-      { :run_internal => [ "@", "run", "error", "exception" ] },
-      { :run_internal => [ "@", "run", "error", "no-memory" ] },
-      { :run_internal => [ "@", "run", "error", "no-processes" ] },
-      { :run_internal => [ "@", "run", "error", "no-thread" ] },
-      { :run_internal => [ "@", "run", "error", "pipe" ] }
-    ],
-    :note => [
-      { :run_error_input_failed => [ "@", "run", "error", "input", "failed" ] },
-      { :run_child_error_output_format => [ "@", "run", "error", "format" ] },
-      { :run_child_error_output_format => [ "@", "error", "format" ] }
-    ],
-    :exit => [ { :code => [ "@", "run", "exit", "?" ] } ],
-    :bytes => [ { :bytes => [ "@", "run", "bytes", "?", "*" ] } ]
+    :error => {
+      :args_missing => [ "@", "run", "error", "missing", "*" ],
+      :syntax => [ [ "@", "run", "error", "?", "argument", "unknown" ],
+        [ "@", "run", "error", "?", "duplicate", "?" ] ],
+      :command_error => [ "@", "run", "error", "*" ],
+      :run_internal => [ [ "@", "run", "error", "exception" ],
+        [ "@", "run", "error", "no-memory" ],
+        [ "@", "run", "error", "no-processes" ],
+        [ "@", "run", "error", "no-thread" ],
+        [ "@", "run", "error", "pipe" ] ]
+    },
+    :note => {
+      :run_error_input_failed => [ "@", "run", "error", "input", "failed" ],
+      :run_child_error_output_format => [ [ "@", "run", "error", "format" ],
+        [ "@", "error", "format" ] ]
+    },
+    :exitcode => [ "@", "run", "exit", "?" ],
+    :bytes => [ "@", "run", "bytes", "?", "*" ]
   }
   @@prev_bytes_mutex = Mutex.new
   @@prev_bytes_id = nil
 
   def initialize(name)
-    @msgmaker = Proc.new do |category, action, message, vars|
-      message_maker(category, action, message, vars)
+    @msgmaker = Proc.new do |action, message, vars|
+      message_maker(action, message, vars)
     end
     super(name)
   end
 
-  def message_maker(category, action, message, vars)
+  def message_maker(action, message, vars)
     out = []
-    case category
+    case action.first
     when :note
-      case action
+      case action.last
       when :run_error_input_failed
         out.push "Output to #{message[0]} failed."
       when :run_child_error_output_format
@@ -546,8 +536,8 @@ class LaunchCommand < RunBase
   def initialize
     super('launch')
     @action = PatternAction.new([
-      { :return => [{ :run => [ '@', 'run', 'running', '?' ] }],
-        :error => [{ :term => [ '@', 'run', 'terminated', '?' ] }]},
+      { :return => [ '@', 'run', 'running', '?' ],
+        :error => [ '@', 'run', 'terminated', '?' ]},
       @@actions_run_common ], [ @msgmaker, $signal_sender ])
   end
 
@@ -596,7 +586,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { 'error' => [ { 'error' => [ '@', 'feed', 'error', '*' ] } ] } ],
+      [ { 'error' => [ '@', 'feed', 'error', '*' ] } ],
       [ $signal_sender ])
   end
 end
@@ -982,23 +972,18 @@ unless states['__setup']['signal2state'].has_key? nil
 end
 
 
-def label_signal_check(category, action, message, vars)
-  case category
-  when :internal
-    case action
-    when :stored
-      l2s = $machine.label2signal
-      if l2s.has_key? vars.first
-        $machine.set_signal l2s[vars.first]
-      end
-    when :data_error
-      $machine.set_error(message.to_s)
+def label_signal_check(action, message, vars)
+  case action.first
+  when :stored
+    l2s = $machine.label2signal
+    if l2s.has_key? vars.first
+      $machine.set_signal l2s[vars.first]
     end
-  when :internal_error
-    $machine.set_error(message.to_s)
+  when :data_error then $machine.set_error(message.to_s)
+  when :error then $machine.set_error(message.to_s)
   end
 end
-sig_check = Proc.new { |ct, act, msg, vs| label_signal_check(ct, act, msg, vs) }
+sig_check = Proc.new { |act, msg, vs| label_signal_check(act, msg, vs) }
 
 if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
   # Seemingly running under datalackey.

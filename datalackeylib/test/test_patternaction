@@ -8,7 +8,8 @@ require 'minitest/autorun'
 
 class TestInternal < Minitest::Test
   def test_internals_match
-    pa = PatternAction.new([])
+    pa_id = PatternAction.new([])
+    pa_nil = PatternAction.new([], [], nil)
     [ [ [ 'id', 'error', 'missing' ], [ :error, :syntax ], 0 ],
       [ [ 'id', 'error', 'missing', 'x' ], [ :error, :syntax ], 1 ],
       [ [ 'id', 'error', 'missing', 'x', 'x' ], [ :error, :syntax ], 2 ],
@@ -41,8 +42,8 @@ class TestInternal < Minitest::Test
       [ [ 'id', 'done', "" ], [ :done ], 0 ],
       [ [ 'id', 'run', 'running', '1' ], [ :child ], 1 ]
     ].each do |msg, expected, len|
-      c = pa.clone
-      c.set_identifier('id')
+      c = msg.first.nil?() ? pa_nil.clone() : pa_id.clone()
+      c.set_identifier(msg.first)
       act, vars = c.best_match(msg)
       assert(!act.nil?, "No match from internal for #{msg}")
       assert(act.length == 1, "Matched several actions: #{act}")
@@ -111,13 +112,6 @@ class TestInternal < Minitest::Test
     assert(act.length == 1, "Matched has more than 1: #{act}")
     act = act.first
     assert(act.length == 1 && act.first == :marr, "Unexpected: #{act.to_s}")
-    patt = []
-    act, vars = c.best_match(patt)
-    exp = [ [ :arr ], [ :map, :arr ] ]
-    assert(act.length == exp.length, "Matched has unexpected count #{act.to_s}")
-    exp.each do |a|
-      assert(act.include?(a), "Not found: #{a} in #{act.to_s}")
-    end
   end
 
   def test_bad_mapping

@@ -92,4 +92,12 @@ class TestIO < Minitest::Test
     assert(tr.exit.length == 1 && tr.exit.first.length == 1 && tr.exit.first[0] == :error, "Not [[:error]] but #{tr.exit}")
     end_io(fake, err, io)
   end
+
+  def test_data
+    fake, err, io = fake_io([ '1', '[null,"data","stored","label",1]' ])
+    io.dump(JSON.generate({"label":"value"}))
+    sleep(0.5)
+    assert(io.data.has_key?('label'), "No label in data.")
+    end_io(fake, err, io)
+  end
 end

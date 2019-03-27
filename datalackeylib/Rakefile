@@ -19,4 +19,5 @@ desc 'Test gem.'
 task :test do
   sh 'test/test_process'
   sh 'test/test_patternaction'
+  sh 'test/test_io'
 end
