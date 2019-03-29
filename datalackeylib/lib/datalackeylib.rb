@@ -126,70 +126,35 @@ end
 
 
 class PatternAction
-  # Contains mappings needed for handling nil and generic messages.
-  @@internal_map = {
-    :error => {
-      :syntax => [
-        [ '@', 'error', 'missing', '*' ],
-        [ '@', 'error', 'not-string', '*' ],
-        [ '@', 'error', 'not-string-null', '*' ],
-        [ '@', 'error', 'pairless', '*' ],
-        [ '@', 'error', 'unexpected', '*' ],
-        [ '@', 'error', 'unknown', '*' ],
-        [ '@', 'error', 'command', 'missing', '?' ],
-        [ '@', 'error', 'command', 'not-string', '?' ],
-        [ '@', 'error', 'command', 'unknown', '?' ]
-      ],
-      :user_id => [ nil, 'error', 'identifier', '?' ],
-      :format => [ nil, 'error', 'format' ]
-    },
-    :stored => [ nil, 'data', 'stored', '?', '?' ],
-    :deleted => [ nil, 'data', 'deleted', '?', '?' ],
-    :data_error => [ nil, 'data', 'error', '?', '?' ],
-    :started => [ nil, 'process', 'started', '?', '?' ],
-    :ended => [ nil, 'process', 'ended', '?', '?' ],
-    :version => [ '@', 'version', "", '?' ],
-    :done => [ '@', 'done', "" ],
-    :child => [ '@', 'run', 'running', '?' ]
-  }
-
-  attr_reader :identifier, :internal
+  attr_reader :identifier
   attr_accessor :exit, :command, :status, :generators
 
-  def initialize(action_maps_array, message_callables = [],
-      identifier_placeholder = '@')
+  def initialize(action_maps_array, message_callables = [])
+    raise ArgumentError.new('action_maps_array is empty') unless action_maps_array.is_a?(Array) and action_maps_array.length > 0
     @pattern2act = { }
     @fixed2act = { }
-    @identifier = identifier_placeholder
     @exit = nil
     @command = nil
     @status = nil
     @generators = message_callables.is_a?(Array) ? message_callables.clone : [ message_callables ]
-    firsts = { }
-    action_maps_array.each { |m| fill_pattern2action_maps(firsts, [], m) }
-    # Ensure we use unique key for internal mapping.
-    @internal = ''
-    chars = 'qwertyuiopasdfghjklzxcvbnm1234567890'
-    rng = Random.new
-    while firsts.has_key? @internal
-      @internal = @internal + chars[rng.rand(chars.length)]
+    action_maps_array.each do |m|
+      raise ArgumentError.new('Action map is not a map.') unless m.is_a? Hash
+      fill_pattern2action_maps([], m)
     end
-    fill_pattern2action_maps({ }, [ @internal ], [ @@internal_map ])
     @pattern2act.each_value { |acts| acts.uniq! }
     @fixed2act.each_value { |acts| acts.uniq! }
+    raise ArgumentError.new('No patterns.') if @pattern2act.empty? and @fixed2act.empty?
   end
 
-  def fill_pattern2action_maps(firsts, actionlist, item)
+  def fill_pattern2action_maps(actionlist, item)
     if item.is_a? Array
       unless item.first.is_a?(Array) or item.first.is_a?(Hash)
         # item is a pattern.
-        raise ArgumentError.new('Pattern-array must be under action.' + item.to_s) if actionlist.empty?
-        return unless item.first == @identifier
+        raise ArgumentError.new("Pattern-array must be under action: #{item.to_s}") if actionlist.empty?
         wildcards = false
-        pattern = []
+        pattern = [ :identifier ]
         item.each do |element|
           case element
-          when @identifier then pattern.push :identifier
           when '?'
             wildcards = true
             pattern.push :one
@@ -203,15 +168,14 @@ class PatternAction
         tgt = wildcards ? @pattern2act : @fixed2act
         tgt[pattern] = [] unless tgt.has_key? pattern
         tgt[pattern].push actionlist
-        firsts[actionlist.first] = true
         return
       end
-      item.each { |sub| fill_pattern2action_maps(firsts, actionlist, sub) }
+      item.each { |sub| fill_pattern2action_maps(actionlist, sub) }
     elsif item.is_a? Hash
       item.each_pair do |action, sub|
         acts = actionlist.clone
         acts.push action
-        fill_pattern2action_maps(firsts, acts, sub)
+        fill_pattern2action_maps(acts, sub)
       end
     else
       raise ArgumentError.new('Item not a mapping, array, or pattern-array.')
@@ -247,7 +211,7 @@ class PatternAction
     return [ @fixed2act[message_array], [] ] if @fixed2act.has_key? message_array
     best_length = 0
     best = nil
-    best_vars = nil
+    best_vars = []
     @pattern2act.each_pair do |pattern, act|
       next if message_array.length + 1 < pattern.length
       next if pattern.last != :rest and message_array.length != pattern.length
@@ -286,6 +250,65 @@ end
 
 
 class DatalackeyIO
+  class NoPatternNoAction
+    attr_reader :identifier
+    attr_accessor :exit, :command, :status, :generators
+
+    def initialize
+      @exit = nil
+      @command = nil
+      @status = nil
+      @generators = []
+    end
+
+    def set_identifier(identifier)
+      @identifier = identifier
+    end
+
+    def best_match(message_array)
+      return [ nil, [] ]
+    end
+  end
+  private_constant :NoPatternNoAction
+
+  @@internal_notification_map = {
+    :error => {
+      :user_id => [ 'error', 'identifier', '?' ],
+      :format => [ 'error', 'format' ]
+    },
+    :stored => [ 'data', 'stored', '?', '?' ],
+    :deleted => [ 'data', 'deleted', '?', '?' ],
+    :data_error => [ 'data', 'error', '?', '?' ],
+    :started => [ 'process', 'started', '?', '?' ],
+    :ended => [ 'process', 'ended', '?', '?' ]
+  }
+
+  @@internal_generic_map = {
+    :error => {
+      :syntax => [
+        [ 'error', 'missing', '*' ],
+        [ 'error', 'not-string', '*' ],
+        [ 'error', 'not-string-null', '*' ],
+        [ 'error', 'pairless', '*' ],
+        [ 'error', 'unexpected', '*' ],
+        [ 'error', 'unknown', '*' ],
+        [ 'error', 'command', 'missing', '?' ],
+        [ 'error', 'command', 'not-string', '?' ],
+        [ 'error', 'command', 'unknown', '?' ]
+      ]
+    },
+    :done => [ 'done', "" ],
+    :child => [ 'run', 'running', '?' ]
+  }
+
+  def self.internal_notification_map
+    return Marshal.load(Marshal.dump(@@internal_notification_map))
+  end
+
+  def self.internal_generic_map
+    return Marshal.load(Marshal.dump(@@internal_generic_map))
+  end
+
   attr_reader :syntax, :version
 
   def initialize(to_datalackey, from_datalackey, notification_callable = nil,
@@ -296,16 +319,16 @@ class DatalackeyIO
     @from_datalackey = from_datalackey
     @identifier = 0
     @tracked_mutex = Mutex.new
-    pa = PatternAction.new([], [], nil)
-    pa.set_identifier(nil)
-    @tracked = { pa.identifier => pa }
-    @tracked.default = nil
+    # Handling of notifications.
+    @notify_tracker = PatternAction.new([ @@internal_notification_map ])
+    @notify_tracker.set_identifier(nil)
+    @internal = PatternAction.new([ @@internal_generic_map ])
+    @tracked = Hash.new(nil)
     @waiting = nil
     @return_mutex = Mutex.new
     @return_condition = ConditionVariable.new
     @dataprocess_mutex = Mutex.new
     @data = Hash.new(0)
-    @data.default = 0
     @process = { }
     @children = { }
     @version = { }
@@ -330,95 +353,97 @@ class DatalackeyIO
           from_datalackey_echo_callable.call(joined) unless from_datalackey_echo_callable.nil?
           msg = JSON.parse joined
           # See if we are interested in it.
-          tracker = @tracked_mutex.synchronize { @tracked[msg[0]] }
-          next if tracker.nil?
-          act, vars = tracker.best_match(msg)
-          next if act.nil?
-          if msg[0].nil?
-            actionable = []
-            act.each do |item|
-              next if item.first != tracker.internal # Some other uses the pattern.
-              rest = item[1...item.length]
-              name = vars.first
-              id = vars.last
-              # Messages from different threads may arrive out of order so
-              # new data/process may be in book-keeping when previous should
-              # be removed. With data these imply over-writing immediately,
-              # with processes re-use of identifier and running back to back.
-              case rest.first
-              when :stored
-                @dataprocess_mutex.synchronize do
-                  if @data[name] < id
-                    @data[name] = id
-                    actionable.push rest
-                  end
+          if msg.first.nil?
+            act, vars = @notify_tracker.best_match(msg)
+            next if act.nil?
+            # We know there is only one action that matches.
+            act = act.first
+            actionable = nil
+            name = vars.first
+            id = vars.last
+            # Messages from different threads may arrive out of order so
+            # new data/process may be in book-keeping when previous should
+            # be removed. With data these imply over-writing immediately,
+            # with processes re-use of identifier and running back to back.
+            case act.first
+            when :stored
+              @dataprocess_mutex.synchronize do
+                if @data[name] < id
+                  @data[name] = id
+                  actionable = act
                 end
-              when :deleted
-                @dataprocess_mutex.synchronize do
-                  if @data.has_key?(name) and @data[name] <= id
-                    @data.delete name
-                    actionable.push rest
-                  end
-                end
-              when :data_error
-                @dataprocess_mutex.synchronize do
-                  @data.delete(name) if @data[name] == id
-                  actionable.push rest
-                end
-              when :started
-                @dataprocess_mutex.synchronize { @process[name] = id }
-                actionable.push rest
-              when :child
-                @dataprocess_mutex.synchronize { @children[name] = id }
-              when :ended
-                @dataprocess_mutex.synchronize do
-                  if @process[name] == id
-                    @process.delete(name)
-                    @children.delete(name)
-                  end
-                  actionable.push rest
-                end
-              when :error
-                if item[2] == :format
-                  @to_datalackey_mutex.synchronize { @to_datalackey.putc 0 }
-                end
-                actionable.push rest
               end
+            when :deleted
+              @dataprocess_mutex.synchronize do
+                if @data.has_key?(name) and @data[name] <= id
+                  @data.delete name
+                  actionable = act
+                end
+              end
+            when :data_error
+              @dataprocess_mutex.synchronize do
+                @data.delete(name) if @data[name] == id
+              end
+              actionable = act
+            when :started
+              @dataprocess_mutex.synchronize { @process[name] = id }
+              actionable = act
+            when :ended
+              @dataprocess_mutex.synchronize do
+                if @process[name] == id
+                  @process.delete(name)
+                  @children.delete(name)
+                end
+              end
+              actionable = act
+            when :error
+              if item[2] == :format
+                @to_datalackey_mutex.synchronize { @to_datalackey.putc 0 }
+              end
+              actionable = act
             end
-            next if notification_callable.nil?
-            actionable.each do |rest|
-              notification_callable.call(rest, msg, vars)
-            end
-            next # Notifications have been sent, no generators in nil tracker.
+            next if notification_callable.nil? or actionable.nil?
+            notification_callable.call(actionable, msg, vars)
+            next
           end
+          # Not a notification.
+          trackers = @tracked_mutex.synchronize { @tracked[msg[0]] }
+          next if trackers.nil?
           finish = false
-          act.each do |item|
-            if item.first != tracker.internal
+          last = nil
+          # Deal with user-provided PatternAction.
+          tracker = trackers.first
+          act, vars = tracker.best_match(msg)
+          unless act.nil?
+            act.each do |item|
               tracker.generators.each do |p|
                 break if p.call(item, msg, vars)
               end
-              next unless msg[0] == @waiting
+              next unless msg.first == @waiting
               case item.first
-              when :return, 'return' then finish = true
-              when :error, 'error' then finish = true
-              end
-              next
-            end
-            next unless msg[0] == @waiting # Only command-specific messages.
-            case item[1]
-            when :done
-              finish = true
-              @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
-            when :version
-              @syntax = msg[3]['commands']
-              @version = { }
-              msg.last.each_pair do |key, value|
-                @version[key] = value if value.is_a? Integer
+              when :return, 'return'
+                finish = true
+                last = act if last.nil?
+              when :error, 'error'
+                finish = true
+                last = act
               end
             end
           end
+          # Check internal PatternAction.
+          internal = trackers.last
+          act, vars = internal.best_match(msg)
+          unless act.nil?
+            act = act.first # We know patterns are all unique in mapping.
+            if act.first == :child
+              @dataprocess_mutex.synchronize { @children[msg[0]] = vars.first }
+            elsif msg.first == @waiting and act.first == :done
+              finish = true
+              @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
+            end
+          end
           if finish
-            tracker.exit = act
+            tracker.exit = last
             @tracked_mutex.synchronize { @waiting = nil }
             @return_mutex.synchronize { @return_condition.signal }
           end
@@ -429,7 +454,19 @@ class DatalackeyIO
       @return_mutex.synchronize { @return_condition.signal }
     end
     # Outside thread block.
-    send(PatternAction.new([]), ['version'])
+    send(PatternAction.new([{ :version => [ 'version', "", '?' ] }], [
+      Proc.new do |action, message, vars|
+        if action.first == :version
+          @syntax = vars.first['commands']
+          @version = { }
+          vars.first.each_pair do |key, value|
+            @version[key] = value if value.is_a? Integer
+          end
+          true
+        else false
+        end
+      end
+    ]), ['version'])
   end
 
   def data
@@ -456,6 +493,7 @@ class DatalackeyIO
     @read_datalackey.join
   end
 
+  # Pass nil pattern_action if you are not interested in doing anything.
   def send(pattern_action, command, user_id = false)
     return nil if @to_datalackey_mutex.synchronize { @to_datalackey.closed? }
     if user_id
@@ -465,11 +503,13 @@ class DatalackeyIO
       @identifier += 1
       command.prepend id
     end
-    tracker = pattern_action.clone
+    tracker = pattern_action.nil? ? NoPatternNoAction.new : pattern_action.clone
     tracker.set_identifier(id)
     tracker.command = JSON.generate(command)
+    internal = @internal.clone
+    internal.set_identifier(id)
     @tracked_mutex.synchronize do
-      @tracked[id] = tracker unless id.nil?
+      @tracked[id] = [ tracker, internal ] unless id.nil?
       @waiting = id
     end
     dump(tracker.command)

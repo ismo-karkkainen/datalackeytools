@@ -271,7 +271,9 @@ $machine = Machine.new
 
 $signal_sender = Proc.new do |action, message, vars|
   case action.first
-  when :error then $machine.set_error(message.join(' '))
+  when :error
+    $machine.set_error(message.join(' '))
+    true
   when :exitcode
     if vars.first != 0
       $machine.set_error(message.join(' '))
@@ -444,23 +446,23 @@ PopCommand.new
 class RunBase < Command
   @@actions_run_common = {
     :error => {
-      :args_missing => [ "@", "run", "error", "missing", "*" ],
-      :syntax => [ [ "@", "run", "error", "?", "argument", "unknown" ],
-        [ "@", "run", "error", "?", "duplicate", "?" ] ],
-      :command_error => [ "@", "run", "error", "*" ],
-      :run_internal => [ [ "@", "run", "error", "exception" ],
-        [ "@", "run", "error", "no-memory" ],
-        [ "@", "run", "error", "no-processes" ],
-        [ "@", "run", "error", "no-thread" ],
-        [ "@", "run", "error", "pipe" ] ]
+      :args_missing => [ "run", "error", "missing", "*" ],
+      :syntax => [ [ "run", "error", "?", "argument", "unknown" ],
+        [ "run", "error", "?", "duplicate", "?" ] ],
+      :command_error => [ "run", "error", "*" ],
+      :run_internal => [ [ "run", "error", "exception" ],
+        [ "run", "error", "no-memory" ],
+        [ "run", "error", "no-processes" ],
+        [ "run", "error", "no-thread" ],
+        [ "run", "error", "pipe" ] ]
     },
     :note => {
-      :run_error_input_failed => [ "@", "run", "error", "input", "failed" ],
-      :run_child_error_output_format => [ [ "@", "run", "error", "format" ],
-        [ "@", "error", "format" ] ]
+      :run_error_input_failed => [ "run", "error", "input", "failed" ],
+      :run_child_error_output_format => [ [ "run", "error", "format" ],
+        [ "error", "format" ] ]
     },
-    :exitcode => [ "@", "run", "exit", "?" ],
-    :bytes => [ "@", "run", "bytes", "?", "*" ]
+    :exitcode => [ "run", "exit", "?" ],
+    :bytes => [ "run", "bytes", "?", "*" ]
   }
   @@prev_bytes_mutex = Mutex.new
   @@prev_bytes_id = nil
@@ -536,8 +538,8 @@ class LaunchCommand < RunBase
   def initialize
     super('launch')
     @action = PatternAction.new([
-      { :return => [ '@', 'run', 'running', '?' ],
-        :error => [ '@', 'run', 'terminated', '?' ]},
+      { :return => [ 'run', 'running', '?' ],
+        :error => [ 'run', 'terminated', '?' ]},
       @@actions_run_common ], [ @msgmaker, $signal_sender ])
   end
 
@@ -551,13 +553,14 @@ LaunchCommand.new
 
 class ProcessCommand < Command
   def initialize(name)
-    @action = PatternAction.new([], [ $signal_sender ])
+    @action = PatternAction.new([ DatalackeyIO.internal_generic_map ], [ $signal_sender ])
     super(name)
   end
 
   def handle(cmd)
     cmd.flatten!
     cmd.concat $lackey.launched.keys if cmd.length == 1
+    return if cmd.length == 1
     super(cmd)
   end
 end
@@ -586,7 +589,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { 'error' => [ '@', 'feed', 'error', '*' ] } ],
+      [ { 'error' => [ 'feed', 'error', '*' ] } ],
       [ $signal_sender ])
   end
 end
@@ -682,7 +685,7 @@ JumpCommand.new
 class DeleteCommand < Command
   def initialize
     super('delete')
-    @action = PatternAction.new([])
+    @action = nil
   end
 end
 DeleteCommand.new
@@ -690,7 +693,7 @@ DeleteCommand.new
 class RenameCommand < Command
   def initialize
     super('rename')
-    @action = PatternAction.new([])
+    @action = nil
   end
 end
 RenameCommand.new

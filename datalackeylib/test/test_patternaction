@@ -8,8 +8,8 @@ require 'minitest/autorun'
 
 class TestInternal < Minitest::Test
   def test_internals_match
-    pa_id = PatternAction.new([])
-    pa_nil = PatternAction.new([], [], nil)
+    pa_id = PatternAction.new([ DatalackeyIO.internal_generic_map ])
+    pa_nil = PatternAction.new([ DatalackeyIO.internal_notification_map ])
     [ [ [ 'id', 'error', 'missing' ], [ :error, :syntax ], 0 ],
       [ [ 'id', 'error', 'missing', 'x' ], [ :error, :syntax ], 1 ],
       [ [ 'id', 'error', 'missing', 'x', 'x' ], [ :error, :syntax ], 2 ],
@@ -31,16 +31,15 @@ class TestInternal < Minitest::Test
       [ [ 'id', 'error', 'command', 'missing', '1' ], [ :error, :syntax ], 1 ],
       [ [ 'id', 'error', 'command', 'not-string', '1' ], [ :error, :syntax ], 1 ],
       [ [ 'id', 'error', 'command', 'unknown', '1' ], [ :error, :syntax ], 1 ],
+      [ [ 'id', 'done', "" ], [ :done ], 0 ],
+      [ [ 'id', 'run', 'running', '1' ], [ :child ], 1 ],
       [ [ nil, 'error', 'identifier', '1' ], [ :error, :user_id ], 1 ],
       [ [ nil, 'error', 'format' ], [ :error, :format ], 0 ],
       [ [ nil, 'data', 'stored', '1', '1' ], [ :stored ], 2 ],
       [ [ nil, 'data', 'deleted', '1', '1' ], [ :deleted ], 2 ],
       [ [ nil, 'data', 'error', '1', '1' ], [ :data_error ], 2 ],
       [ [ nil, 'process', 'started', '1', '1' ], [ :started ], 2 ],
-      [ [ nil, 'process', 'ended', '1', '1' ], [ :ended ], 2 ],
-      [ [ 'id', 'version', "", '1' ], [ :version ], 1 ],
-      [ [ 'id', 'done', "" ], [ :done ], 0 ],
-      [ [ 'id', 'run', 'running', '1' ], [ :child ], 1 ]
+      [ [ nil, 'process', 'ended', '1', '1' ], [ :ended ], 2 ]
     ].each do |msg, expected, len|
       c = msg.first.nil?() ? pa_nil.clone() : pa_id.clone()
       c.set_identifier(msg.first)
@@ -48,8 +47,6 @@ class TestInternal < Minitest::Test
       assert(!act.nil?, "No match from internal for #{msg}")
       assert(act.length == 1, "Matched several actions: #{act}")
       act = act.first
-      assert(act.first == c.internal, "First element is #{act.first} and not internal identifier: #{c.internal}")
-      act = act[1...act.length] # Get rid of internal identifier.
       assert(act.length == expected.length, "Actions #{act} != expected #{expected} for #{msg}")
       act.each_index do |k|
         assert(act[k] == expected[k], "Act[#{k}] == #{act[k]} != expected #{expected[k]}")
@@ -64,7 +61,8 @@ class TestInternal < Minitest::Test
   end
 
   def test_internal_mismatch_vars
-    pa = PatternAction.new([])
+    pa_id = PatternAction.new([ DatalackeyIO.internal_generic_map ])
+    pa_nil = PatternAction.new([ DatalackeyIO.internal_notification_map ])
     [ [ 'id', 'error', 'command', 'missing', '1' ],
       [ 'id', 'error', 'command', 'not-string', '1' ],
       [ 'id', 'error', 'command', 'unknown', '1' ],
@@ -74,41 +72,41 @@ class TestInternal < Minitest::Test
       [ nil, 'data', 'error', '1', '1' ],
       [ nil, 'process', 'started', '1', '1' ],
       [ nil, 'process', 'ended', '1', '1' ],
-      [ 'id', 'version', "", '1' ],
       [ 'id', 'run', 'running', '1' ],
     ].each do |msg|
-      c = pa.clone
-      c.set_identifier('id')
+      c = msg.first.nil?() ? pa_nil.clone() : pa_id.clone()
+      c.set_identifier(msg.first)
       last = msg.pop
       act, vars = c.best_match(msg) # One too few.
-      assert(act.nil? && vars.nil?, "Found match for #{msg} when should not: #{act} and #{vars}")
+      assert(act.nil? && vars.empty?, "Found match for #{msg} when should not: #{act} and #{vars}")
       msg.push(last, last)
       act, vars = c.best_match(msg) # One too much.
-      assert(act.nil? && vars.nil?, "Found match for #{msg} when should not: #{act} and #{vars}")
+      assert(act.nil? && vars.empty?, "Found match for #{msg} when should not: #{act} and #{vars}")
     end
   end
 
   def test_good_mapping
-    patt = [ 'id', 'word' ]
+    patt = [ 'word' ]
     map = {
       :arr => [ { :patt => patt }, [ patt ], [], patt ],
       :map => { :arr => [], :map => { :patt => patt }, :patt => patt },
       :arr2 => [ [ { :map => patt, :marr => [ patt, patt ] } ] ],
-      :marr => [ patt, [ 'id', 'word2' ] ]
+      :marr => [ patt, [ 'word2' ] ]
     }
-    pa = PatternAction.new([ map ], [], 'id')
+    pa = PatternAction.new([ map ])
     c = pa.clone
-    patt[0] = 'ident'
-    c.set_identifier(patt[0])
-    act, vars = c.best_match(patt)
+    msg = [ 'ident' ]
+    msg.concat patt
+    c.set_identifier(msg[0])
+    act, vars = c.best_match(msg)
     exp = [ [ :arr, :patt ], [ :arr ], [ :map, :map, :patt ], [ :map, :patt ],
       [ :arr2, :map ], [ :arr2, :marr ], [ :marr ] ]
     assert(act.length == exp.length, "Matched has unexpected count #{act.to_s}")
     exp.each do |a|
       assert(act.include?(a), "Not found: #{a} in #{act.to_s}")
     end
-    patt = [ c.identifier, 'word2' ]
-    act, vars = c.best_match(patt)
+    msg = [ c.identifier, 'word2' ]
+    act, vars = c.best_match(msg)
     assert(act.length == 1, "Matched has more than 1: #{act}")
     act = act.first
     assert(act.length == 1 && act.first == :marr, "Unexpected: #{act.to_s}")
@@ -118,11 +116,27 @@ class TestInternal < Minitest::Test
     [ { :patt => 5 }, { :patt => 'str' }, [ 1 ], 'str' ].each do |bad|
       failed = false
       begin
-        pa = PatternAction.new([ bad ])
+        PatternAction.new([ bad ])
       rescue ArgumentError
         failed = true
       end
       assert(failed, "Bad mapping detect failed: #{bad}")
+    end
+    failed = false
+    begin
+      PatternAction.new()
+    rescue ArgumentError
+      failed = true
+    end
+    assert(failed, "Missing action maps accepted.")
+    [ [], [ 'not hash' ], [ { } ] ].each do |arg|
+      failed = false
+      begin
+        PatternAction.new(arg)
+      rescue ArgumentError
+        failed = true
+      end
+      assert(failed, "Accepted improper mapping: #{arg}")
     end
   end
 end

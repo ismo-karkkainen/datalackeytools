@@ -119,11 +119,9 @@ label_and_value : 1
 2 : 3
 State: __terminate_all
 Command: ["close"]
-["end-feed"]
 Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
-["terminate"]
 ####ERR
 ####COMMAND datalackey-fsm -m --stderr -f 4 fsm/ruby.state
 ####CODE 0

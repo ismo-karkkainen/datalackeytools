@@ -70,7 +70,7 @@ class TestIO < Minitest::Test
 
   def test_noop_return
     fake, err, io = fake_io([ '1', '[1,"no-op",""]', '[1,"done",""]' ])
-    pa = PatternAction.new([ { :return => [ '@', 'no-op', '' ] } ],
+    pa = PatternAction.new([ { :return => [ 'no-op', '' ] } ],
       [ Proc.new { |act, msg, vars| assert(act.first == :return, "Not return.") } ])
     cmd = [1,'no-op']
     tr = io.send(pa, cmd, true)
@@ -84,7 +84,7 @@ class TestIO < Minitest::Test
 
   def test_noop_error
     fake, err, io = fake_io([ '1', '[1,"no-op",""]', '[1,"done",""]' ])
-    pa = PatternAction.new([ { :error => [ '@', 'no-op', '' ] } ],
+    pa = PatternAction.new([ { :error => [ 'no-op', '' ] } ],
       [ Proc.new { |act, msg, vars| assert(act.first == :error, "Not error.") } ])
     cmd = ['no-op']
     tr = io.send(pa, cmd)
