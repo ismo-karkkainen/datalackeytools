@@ -125,17 +125,37 @@ class DatalackeyParentProcess
 end
 
 
-class PatternAction
+# Intended to be used internaly when there are no patterns to act on.
+# Instead of using this, pass nil to DatalakceyIO.send
+class NoPatternNoAction
   attr_reader :identifier
-  attr_accessor :exit, :command, :status, :generators
+  attr_accessor :exit, :command, :status, :message, :generators
 
-  def initialize(action_maps_array, message_callables = [])
-    raise ArgumentError.new('action_maps_array is empty') unless action_maps_array.is_a?(Array) and action_maps_array.length > 0
-    @pattern2act = { }
-    @fixed2act = { }
+  def initialize
     @exit = nil
     @command = nil
     @status = nil
+    @message = nil
+    @generators = []
+  end
+
+  def set_identifier(identifier)
+    @identifier = identifier
+  end
+
+  def best_match(message_array)
+    return [ nil, [] ]
+  end
+end
+
+
+class PatternAction < NoPatternNoAction
+
+  def initialize(action_maps_array, message_callables = [])
+    raise ArgumentError.new('action_maps_array is empty') unless action_maps_array.is_a?(Array) and action_maps_array.length > 0
+    super()
+    @pattern2act = { }
+    @fixed2act = { }
     @generators = message_callables.is_a?(Array) ? message_callables.clone : [ message_callables ]
     action_maps_array.each do |m|
       raise ArgumentError.new('Action map is not a map.') unless m.is_a? Hash
@@ -250,26 +270,6 @@ end
 
 
 class DatalackeyIO
-  class NoPatternNoAction
-    attr_reader :identifier
-    attr_accessor :exit, :command, :status, :generators
-
-    def initialize
-      @exit = nil
-      @command = nil
-      @status = nil
-      @generators = []
-    end
-
-    def set_identifier(identifier)
-      @identifier = identifier
-    end
-
-    def best_match(message_array)
-      return [ nil, [] ]
-    end
-  end
-  private_constant :NoPatternNoAction
 
   @@internal_notification_map = {
     :error => {
@@ -397,8 +397,29 @@ class DatalackeyIO
               end
               actionable = act
             when :error
-              if item[2] == :format
+              case act[1]
+              when :format
                 @to_datalackey_mutex.synchronize { @to_datalackey.putc 0 }
+              when :user_id
+                unless @waiting.nil?
+                  # Does the waited command have invalid id?
+                  begin
+                    int = Integer(@waiting)
+                    fract = @waiting - int
+                    raise ArgumentError.new() unless fract == 0
+                  rescue ArgumentError, TypeError
+                    unless @waiting.is_a? String
+                      @tracked_mutex.synchronize do
+                        trackers = @tracked[@waiting]
+                        trackers.first.message = msg
+                        trackers.first.exit = [ act ]
+                        @tracked.delete(@waiting)
+                        @waiting = nil
+                      end
+                      @return_mutex.synchronize { @return_condition.signal }
+                    end
+                  end
+                end
               end
               actionable = act
             end
@@ -411,7 +432,7 @@ class DatalackeyIO
           next if trackers.nil?
           finish = false
           last = nil
-          # Deal with user-provided PatternAction.
+          # Deal with user-provided PatternAction (or NoPatternNoAction).
           tracker = trackers.first
           act, vars = tracker.best_match(msg)
           unless act.nil?
@@ -437,12 +458,18 @@ class DatalackeyIO
             act = act.first # We know patterns are all unique in mapping.
             if act.first == :child
               @dataprocess_mutex.synchronize { @children[msg[0]] = vars.first }
-            elsif msg.first == @waiting and act.first == :done
+            elsif msg.first == @waiting
               finish = true
-              @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
+              if act.first == :done
+                @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
+              end
+              if act.first == :error
+                last = [ act ]
+              end
             end
           end
           if finish
+            tracker.message = msg
             tracker.exit = last
             @tracked_mutex.synchronize { @waiting = nil }
             @return_mutex.synchronize { @return_condition.signal }
@@ -525,14 +552,14 @@ class DatalackeyIO
   end
 
   def dump(json_as_string)
-    @to_datalackey_mutex.synchronize {
+    @to_datalackey_mutex.synchronize do
       begin
         @to_datalackey.write json_as_string
         @to_datalackey.flush
         @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
       rescue Errno::EPIPE
       end
-    }
+    end
   end
 
   def verify(command)
@@ -580,11 +607,11 @@ class StoringReader
   end
 
   def readlines
-    @output_mutex.synchronize {
+    @output_mutex.synchronize do
       result = @output
       @output = []
       return result
-    }
+    end
   end
 end
 

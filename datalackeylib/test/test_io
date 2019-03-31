@@ -100,4 +100,18 @@ class TestIO < Minitest::Test
     assert(io.data.has_key?('label'), "No label in data.")
     end_io(fake, err, io)
   end
+
+  def test_bad_id
+    fake, err, io = fake_io([ '1', '[null,"error","identifier","invalid"]' ])
+    failure = io.send(nil, [{},'no-op'], true)
+    exp = [ nil, 'error', 'identifier', 'invalid' ]
+    assert(failure.message.length == exp.length, "Exit message too long: #{failure.message}")
+    exp.each_index do |k|
+      assert(failure.message[k] == exp[k], "Unexpected: #{failure.message} != #{exp}")
+    end
+    assert(failure.exit.length == 1, "Too many actions: #{failure.exit}")
+    act = failure.exit.first
+    assert(act.length == 2 && act[0] == :error && act[1] == :user_id, "Unexpected action: #{act}")
+    end_io(fake, err, io)
+  end
 end

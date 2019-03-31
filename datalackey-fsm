@@ -553,7 +553,7 @@ LaunchCommand.new
 
 class ProcessCommand < Command
   def initialize(name)
-    @action = PatternAction.new([ DatalackeyIO.internal_generic_map ], [ $signal_sender ])
+    @action = nil
     super(name)
   end
 
