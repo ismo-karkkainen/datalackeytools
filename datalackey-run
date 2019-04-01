@@ -36,20 +36,15 @@ class Arguments
         puts opts
         exit 0
       end
-      opts.on("--lackey PROGRAM", "Use specified datalackey executable.") do |e|
-        @lackey = e
-      end
-      opts.on("--memory", "Store data in memory.") { @memory = true }
-      opts.on("--directory [DIR]", "Store data under (working) directory.") do |d|
-        @directory = d || ''
-      end
-      opts.on("--permissions MODE", [:user, :group, :other], "File permissions cover (user, group, other).") do |p|
-        @permissions = { :user => "600", :group => "660", :other => "666" }[p]
-      end
       opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
         @terminate_delay = d
       end
     end
+    DatalackeyProcess.options_for_OptionParser(parser, true,
+      Proc.new { |arg| @lackey = arg },
+      Proc.new { |arg| @memory = arg },
+      Proc.new { |arg| @directory = arg },
+      Proc.new { |arg| @permissions = arg }, nil)
     parser.parse!
     # Perform sanity checks on the values.
     begin
@@ -86,25 +81,25 @@ lackey_stderr = StoringReader.new($lackey_proc.stderr)
 $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil)
 
 run_actions = {
-  :return => [ { :run_running => [ '@', 'run', 'running', '?' ] } ],
+  :return => [ { :run_running => [ 'run', 'running', '?' ] } ],
   :error => [
-    { :error => [ '@', 'run', 'error', '*' ] },
-    { :syntax => [ '@', '?', 'error', 'argument', 'invalid' ] },
-    { :syntax => [ '@', '?', 'error', 'argument', 'not-integer' ] },
-    { :syntax => [ '@', '?', 'missing', '*' ] }
+      [ 'run', 'error', '*' ],
+      [ '?', 'error', 'argument', 'invalid' ],
+      [ '?', 'error', 'argument', 'not-integer' ],
+      [ '?', 'missing', '*' ]
   ],
-  :note => [
-    { :run_error_input_failed => [ '@', 'run', 'error', 'input', 'failed' ] },
-    { :run_child_error_output_format => [ '@', 'run', 'error', 'format' ] },
-    { :run_child_error_output_format => [ '@', 'error', 'format' ] },
-    { :run_terminated => [ '@', 'run', 'terminated', '?' ] },
-    { :run_exit => [ '@', 'run', 'exit', '?' ] },
-    { :run_signal => [ '@', 'run', 'signal', '?' ] },
-    { :run_stop => [ '@', 'run', 'stopped', '?' ] },
-    { :run_continue => [ '@', 'run', 'continued' ] },
-    { :run_closed => [ '@', 'run', 'input', 'closed' ] }
-  ],
-  :bytes => [ { :bytes => [ '@', 'run', 'bytes', '?', '*' ] } ]
+  :note => {
+    :run_error_input_failed => [ 'run', 'error', 'input', 'failed' ],
+    :run_child_error_output_format => [ [ 'run', 'error', 'format' ],
+      [ 'error', 'format' ] ],
+    :run_terminated => [ 'run', 'terminated', '?' ],
+    :run_exit => [ 'run', 'exit', '?' ],
+    :run_signal => [ 'run', 'signal', '?' ],
+    :run_stop => [ 'run', 'stopped', '?' ],
+    :run_continue => [ 'run', 'continued' ],
+    :run_closed => [ 'run', 'input', 'closed' ]
+  },
+  :bytes => [ 'run', 'bytes', '?', '*' ]
 }
 
 $output_mutex = Mutex.new
@@ -112,14 +107,14 @@ $output = []
 $quitting = false
 $exit_code = 0
 
-def run_proc(category, action, message, vars)
+def run_proc(action, message, vars)
   $output_mutex.synchronize do
-    case category
+    case action.first
     when :error
-      $output.push "ERROR: #{action} : #{message[3...message.length].join(' ')}"
+      $output.push "ERROR: #{message[3...message.length].join(' ')}"
       $quitting = true
     when :note
-      case action
+      case action[1]
       when :run_error_input_failed then $output.push "Input failed."
       when :run_child_error_output_format
         $output.push "Output format error."
@@ -140,7 +135,7 @@ def run_proc(category, action, message, vars)
 end
 
 run_pa = PatternAction.new([ run_actions ],
-  [ Proc.new { |ctg, act, msg, vars| run_proc(ctg, act, msg, vars) } ])
+  [ Proc.new { |act, msg, vars| run_proc(act, msg, vars) } ])
 
 # Run the program that was given in the command-line.
 cmd = [ "datalackey-run-#{Process.pid}", 'run' ]
