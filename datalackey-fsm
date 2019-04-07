@@ -228,7 +228,7 @@ class Machine
     name = initial_state_name
     signal2state = { } # Only changes when state has new global mapping.
     while true
-      userout($lackey_stderr.readlines) unless $QUIET
+      userout($lackey_stderr.getlines) unless $QUIET
       finalized = true if name == last_state_name
       unless states.has_key? name
         userout "Transition to unknown state: #{name}"
@@ -1032,7 +1032,7 @@ if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
 end
 $lackey.finish
 $lackey_stderr.close
-userout $lackey_stderr.readlines
+userout $lackey_stderr.getlines
 if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
   userout("datalackey exit: #{$lackey_proc.exit_code}")
 end

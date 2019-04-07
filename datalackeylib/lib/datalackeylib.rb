@@ -606,7 +606,7 @@ class StoringReader
     @reader.join
   end
 
-  def readlines
+  def getlines
     @output_mutex.synchronize do
       result = @output
       @output = []
@@ -639,7 +639,7 @@ class DiscardReader
     @reader.join
   end
 
-  def readlines
+  def getlines
     return []
   end
 end

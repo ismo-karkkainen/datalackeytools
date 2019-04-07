@@ -54,7 +54,7 @@ class TestIO < Minitest::Test
     io.close
     io.finish
     err.close
-    lines = err.readlines
+    lines = err.getlines
     assert(lines.length == 0, "Error output: #{lines.to_s}")
   end
 

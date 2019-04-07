@@ -169,7 +169,7 @@ until $lackey.closed?
     had_output = true
     puts out
   end
-  lackey_stderr.readlines.each do |e|
+  lackey_stderr.getlines.each do |e|
     had_output = true
     STDERR.puts e
   end
