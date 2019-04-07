@@ -1,0 +1,66 @@
+####COMMAND datalackey-make -m --stderr --follow 4
+####CODE 1
+####OUT
+No targets.
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 tgt
+####CODE 2
+####OUT
+Loading: Rulefile from /Users/iak/Projects/datatools/datalackeyshell/test
+No such file or directory @ realpath_rec - Rulefile
+Could not find Rulefile from /Users/iak/Projects/datatools/datalackeyshell/test
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/empty.rules tgt
+####CODE 2
+####OUT
+Loading: empty.rules from make
+Not a top level array: empty.rules from make
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/invalid.rules tgt
+####CODE 2
+####OUT
+Loading: invalid.rules from make
+Not a top level array: invalid.rules from make
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/req-list-types.rules a
+####CODE 0
+####OUT
+Loading: req-list-types.rules from make
+Rule: c
+Rule: b
+Rule: a
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/req-list-types.rules b
+####CODE 0
+####OUT
+Loading: req-list-types.rules from make
+Rule: c
+Rule: b
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/req-list-types.rules c
+####CODE 0
+####OUT
+Loading: req-list-types.rules from make
+Rule: c
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/overwrite.rules a
+####CODE 0
+####OUT
+Loading: overwrite.rules from make
+Rule: b
+Rule: a
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --warn --rules make/overwrite.rules a
+####CODE 0
+####OUT
+Loading: overwrite.rules from make
+a from make/overwrite.rules : 0 replaced by /Users/iak/Projects/datatools/datalackeyshell/test/make/overwrite.rules : 1
+Rule: b
+Rule: a
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --error --rules make/overwrite.rules a
+####CODE 2
+####OUT
+Loading: overwrite.rules from make
+a from make/overwrite.rules : 0 replaced by /Users/iak/Projects/datatools/datalackeyshell/test/make/overwrite.rules : 1
+####ERR

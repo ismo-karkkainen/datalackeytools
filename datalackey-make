@@ -1,0 +1,506 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'yaml'
+require 'json'
+require 'datalackeylib'
+
+$CMDOUT = STDOUT
+$USEROUT = STDERR
+$OVERWRITE_ACTION = :replace
+$FOLLOW = 0
+$QUIET = false
+# For case when we run datalackey.
+$LACKEY = nil
+$MEMORY = nil
+$DIRECTORY = nil
+$PERMISSIONS = nil
+$ECHO = false
+$RULEFILE = nil
+root_dir = Dir.pwd
+
+parser = OptionParser.new do |opts|
+  opts.summary_indent = '  '
+  opts.summary_width = 26
+  opts.banner = "Usage: datalackey-make [options] targets..."
+  opts.separator ""
+  opts.separator "Options:"
+  opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
+    $CMDOUT = STDOUT
+    $USEROUT = STDERR
+  end
+  opts.on('-e', '--stderr', 'Use stderr as command output, stdout for user.') do
+    $CMDOUT = STDERR
+    $USEROUT = STDOUT
+  end
+  opts.on('-r', '--rules FILE', 'Rule file name to load.') do |f|
+    $RULEFILE = f
+  end
+  opts.on('-q', '--quiet', 'Suppress normal command output.') do
+    $QUIET = true
+  end
+  opts.on('-h', '--help', 'Print this help and exit.') do
+    $USEROUT.puts opts
+    exit 0
+  end
+  opts.separator 'Options for error checking and tracking execution:'
+  opts.on('--warn', 'Print warning when state is overwritten.') do
+    $OVERWRITE_ACTION = :warn
+  end
+  opts.on('--error', 'State overwriting is an error.') do
+    $OVERWRITE_ACTION = :error
+  end
+  opts.on('-f', '--follow [LEVEL]', Integer, 'Print state/signal/command.') do |level|
+    $FOLLOW = level
+  end
+end
+
+DatalackeyProcess.options_for_OptionParser(parser, true,
+  Proc.new { |arg| $LACKEY = arg },
+  Proc.new { |arg| $MEMORY = arg },
+  Proc.new { |arg| $DIRECTORY = arg },
+  Proc.new { |arg| $PERMISSIONS = arg },
+  Proc.new { |arg| $ECHO = arg })
+parser.parse!
+
+if ARGV.empty?
+  $USEROUT.puts "No targets."
+  exit 1
+end
+
+$userout_mutex = Mutex.new
+def userout(message)
+  return false if message.is_a?(Array) and message.empty?
+  message = [ message ] unless message.is_a? Array
+  $userout_mutex.synchronize do
+    message.each { |m| $USEROUT.puts m }
+  end
+  return true
+end
+
+def fileline(source, index = nil)
+  if source.is_a? Hash
+    index = source[:load][:index]
+    source = source[:load][:source]
+  end
+  return "#{source} : #{index}"
+end
+
+def load_makefile(filename, current_directory, parent_includes = [])
+  userout("Loading: #{filename} from #{current_directory}") if $FOLLOW > 3
+  begin
+    fullname = File.realpath(filename, current_directory)
+    contents = YAML.load(File.read(fullname))
+    directory = File.dirname(fullname)
+  rescue Errno::ENOENT => e
+    userout e.to_s
+    userout "Could not find #{filename} from #{current_directory}"
+    return nil
+  rescue StandardError => e
+    userout e.to_s
+    userout "Failed to read #{filename} from #{current_directory}"
+    return nil
+  end
+  unless contents.is_a? Array
+    userout "Not a top level array: #{filename} from #{current_directory}"
+    return nil
+  end
+  rules = []
+  contents.each_index do |index|
+    item = contents[index]
+    begin
+      item.delete 'comment'
+    rescue NoMethodError
+      userout "Item is not a mapping: #{fileline(fullname, index)}"
+      return nil
+    end
+    include_name = item.delete 'include'
+    unless include_name.nil?
+      parent_includes.push fullname
+      included = load_makefile(include_name, directory, parent_includes)
+      parent_includes.pop
+      if included.nil?
+        userout " .. #{fileline(fullname, index)}"
+        return nil
+      end
+      rules.concat included
+    end
+    cmds = item.delete 'commands'
+    cmds = [] if cmds.nil?
+    cmds.each_index do |k|
+      cmds[k] = cmds[k].split(' ') if cmds[k].is_a? String
+    end
+    common = { :load => { :source => fullname, :index => index } }
+    common[:commands] = cmds
+    # Separate each target/requirements while keeping common parts.
+    item.each_pair do |target, requirements|
+      unless target.is_a? String
+        userout "Target #{target.to_s} is not a string: #{fileline(fullname, index)}"
+        return nil
+      end
+      requirements = [] if requirements.nil?
+      requirements = [ requirements ] if requirements.is_a? String
+      if requirements.is_a? Array
+        requirements.each_index do |n|
+          req = requirements[n]
+          next if req.is_a? String
+          userout "Target #{target} requirement #{req.to_s} is not a string: #{fullname} : #{index}"
+          return nil
+        end
+      else
+        userout "Requirements is not a list: #{fileline(fullname, index)}"
+        return nil
+      end
+      rule = common.clone
+      rule[:commands] = cmds
+      rule[:target] = target
+      rule[:requirements] = requirements
+      rules.push rule
+    end
+  end
+  return rules
+end
+
+if $RULEFILE.nil?
+  $RULEFILE = "Rulefile"
+  root_dir = Dir.pwd
+else
+  root_dir = File.dirname($RULEFILE)
+  root_dir = Dir.pwd() if root_dir == '.'
+  $RULEFILE = File.basename($RULEFILE)
+end
+rules = load_makefile($RULEFILE, root_dir)
+exit(2) if rules.nil?
+
+# Overwrite checks. Helper mapping from target to rule to find rules faster.
+target2rule = Hash.new(nil)
+rules.each do |rule|
+  tgt = rule[:target]
+  if target2rule.has_key? tgt
+    unless $OVERWRITE_ACTION == :replace
+      userout "#{tgt} from #{fileline(target2rule[tgt])} replaced by #{fileline(rule)}"
+      exit(2) if $OVERWRITE_ACTION == :error
+    end
+  end
+  target2rule[tgt] = rule
+end
+
+# Find out the targets we need.
+todo = ARGV.clone
+todo.uniq!
+needed = Hash.new(nil)
+while not todo.empty?
+  tgt = todo.pop
+  next if needed.has_key? tgt
+  rule = target2rule[tgt]
+  if rule.nil?
+    userout "#{fileline(rule)} : #{tgt} requires unprovided: #{tgt}"
+    exit 2
+  end
+  rule[:needs] = { }
+  rule[:neededby] = { }
+  needed[tgt] = rule
+  rule[:requirements].each do |req|
+    todo.push(req) unless needed.has_key? req
+  end
+end
+
+# Helper reverse mapping, what needs target?
+need2needer = { }
+needed.each_pair do |target, rule|
+  rule[:requirements].each do |req|
+    earlier = need2needer.fetch(req, { })
+    earlier[target] = nil
+    need2needer[req] = earlier
+  end
+end
+
+needed.each_pair do |target, rule|
+  # Find full set of what this needs.
+  needs = rule[:needs]
+  todo = rule[:requirements].clone
+  while not todo.empty?
+    req = todo.pop
+    next if needs.has_key? req
+    needs[req] = nil
+    needed[req][:requirements].each do |r|
+      todo.push(r) unless needs.has_key? r
+      needs[r] = nil
+    end
+  end
+  # Find full set of what needs this.
+  neededby = rule[:neededby]
+  needers = need2needer[target]
+  todo = needers.nil? ? [] : needers.keys
+  while not todo.empty?
+    req = todo.pop
+    next if neededby.has_key? req
+    neededby[req] = nil
+    need2needer.fetch(req, { }).keys.each do |r|
+      todo.push(r) unless neededby.has_key? r
+      neededby[r] = nil
+    end
+  end
+  needs.keys.each do |r|
+    if neededby.has_key? r
+      userout "#{fileline(rule)} : #{target} both needs and is needed by #{r}"
+      exit 2
+    end
+  end
+end
+
+# Sort so that least needed are first.
+order = needed.values
+def compare(a, b)
+  return -1 if b[:needs].has_key? a[:target]
+  return 1 if a[:needs].has_key? b[:target]
+  c = a[:needs].size <=> b[:needs].size
+  return c unless c == 0
+  c = a[:neededby].size <=> b[:neededby].size
+  return c unless c == 0
+  return a[:commands].length <=> b[:commands].length
+end
+order.sort! { |a, b| compare(a, b) }
+
+# Final order correctness check.
+fulfilled = Hash.new()
+order.each do |rule|
+  rule[:needs].keys.each do |req|
+    next if fulfilled.has_key? req
+    userout "#{fileline(rule)} : #{rule[:target]} unfulfilled requirement #{req}"
+    exit 2
+  end
+  fulfilled[rule[:target]] = nil
+end
+
+class Handlers
+  attr_accessor :variables
+
+  def initialize
+    @handlers = Hash.new(nil)
+    @variables = Hash.new(nil)
+    @error_mutex = Mutex.new
+    @error = nil
+  end
+
+  def register(name, object, expand_skip_count = 0)
+    raise ArgumentError.new("Command name is not a string.") unless name.is_a? String
+    @handlers[name] = { :object => object, :skip => expand_skip_count }
+  end
+
+  def set_error(message)
+    @error_mutex.synchronize { @error = message }
+  end
+
+  def get_binding
+    return binding
+  end
+
+  def expand(item, info, seen = [])
+    if item.is_a? Array
+      info.push '['
+      result = []
+      item.each { |v| result.push expand(v, info, seen) }
+      info.push ']'
+      return result
+    end
+    if item.is_a? Hash
+      info.push '{'
+      result = { }
+      item.each_pair { |k, v| result[k] = expand(v, info, seen) }
+      info.push '}'
+      return result
+    end
+    info.concat([ ',', item ]) unless info.last == item
+    if item.is_a?(String) and item.start_with?('$') and ENV.has_key? item[1...item.length]
+      item = ENV[item[1...item.length]]
+      info.concat [ '=>', item ]
+      return expand(item, info, seen)
+    end
+    if @variables.has_key? item
+      s = seen.clone
+      s.push item
+      raise "Loop: #{item} via #{s.join(' => ')}." if seen.include? item
+      item = @variables[item]
+      info.concat [ '=>', item ]
+      return expand(item, info, s)
+    end
+    return item
+  end
+
+  def run(command, rule)
+    @error_mutex.synchronize { return false unless @error.nil? }
+    info = []
+    s_cmd = cmd.to_s
+    userout("Command: #{s_cmd}") if $FOLLOW > 1
+    begin
+      if cmd.is_a? Hash
+        expanded = expand(cmd, info)
+      else
+        handler = @handlers[cmd.first]
+        if handler.nil?
+          expanded = expand(cmd, info)
+        else
+          skip = handler[:skip]
+          skip = cmd.length if cmd.length < skip
+          expanded = cmd[0...skip]
+          rest = cmd[skip...cmd.length]
+          rest = [ rest ] unless rest.is_a? Array
+          expanded.concat expand(rest, info)
+        end
+      end
+    rescue RuntimeError => e
+      userout e.to_s
+      return false
+    end
+    if $FOLLOW > 2
+      s_exp = expanded.to_s
+      userout("Expanded: #{s_exp}") if s_cmd != s_exp
+    end
+    name = nil
+    if expanded.is_a? Hash
+      @handlers.each_key do |key|
+        next unless cmd.has_key? key # Registered names ought to be unique.
+        name = key
+        break
+      end
+      if name.nil?
+        userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} match for dictionary keys not found."
+        return false
+      end
+    else
+      if expanded.is_a? String
+        name = expanded
+      elsif expanded.is_a? Array
+        name = expanded.first
+      else
+        userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unexpected type for command: #{expanded.class.name}"
+        return false
+      end
+    end
+    handler = @handlers[name]
+    if handler.nil?
+      userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unknown command: #{name}"
+      return false
+    end
+    userout("Command: #{}") if $FOLLOW == 1
+    return false unless handler.handle(expanded)
+    return @error_mutex.synchronize { @error.nil? }
+  end
+end
+$handlers = Handlers.new
+
+# Command handlers.
+
+def notification_check(action, mesage, vars)
+  case action.first
+  when :data_error then $handlers.set_error(message.to_s)
+  when :error then $handlers.set_error(message.to_s)
+  end
+end
+ntf_check = Proc.new { |act, msg, vars| notification_check(act, msg, vars) }
+
+# Check if we actually need to be running datalackey.
+if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+  # Seemingly running under datalackey.
+  unless $PERMISSIONS.nil?
+    userout "Cannot give --permissions/-p unless running datalackey."
+    exit 1
+  end
+  if STDIN.tty?
+    userout "Not running under datalackey, turning on memory storage."
+    $MEMORY = true
+  end
+end
+
+if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+  $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
+  $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
+  $lackey = DatalackeyIO.new(
+    $lackey_proc.stdin, $lackey_proc.stdout, ntf_check)
+else
+  begin
+    $DIRECTORY, $PERMISSIONS, $MEMORY =
+      DatalackeyProcess.verify_directory_permissions_memory(
+        $DIRECTORY, $PERMISSIONS, $MEMORY)
+    $lackey_proc = DatalackeyProcess.new(
+      $LACKEY, $DIRECTORY, $PERMISSIONS, $MEMORY)
+  rescue ArgumentError => e
+    userout e.to_s
+    exit 1
+  end
+  $lackey_stderr = StoringReader.new($lackey_proc.stderr)
+  echo = $ECHO ? Proc.new { |json| userout json } : nil
+  $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
+    ntf_check, echo, echo)
+end
+
+# Perform all computations in given order.
+failed = false
+order.each do |rule|
+  failed = $lackey.closed?
+  userout("Rule: #{rule[:target]}") if $FOLLOW > 0
+  rule[:commands].each do |cmd|
+    next if run(cmd, rule)
+    userout "#{fileline(rule)} : #{rule[:target]} command failed: #{cmd}"
+    failed = true
+  end
+  break if failed
+end
+
+unless $lackey.closed?
+  endfeed = [ nil, 'end-feed' ]
+  endfeed.concat $lackey.launched.keys
+  $lackey.send(nil, endfeed, true) if endfeed.length > 2
+end
+terminate_time = Time.new + 5
+until $lackey.closed?
+  sleep(0.1)
+  procs = $lackey.launched.keys
+  break if procs.empty?
+  next if (Time.new <=> terminate_time) == -1
+  terminate = [ nil, 'terminate' ]
+  terminate.concat procs
+  break
+end
+
+$lackey_proc.finish
+$lackey.close
+if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+  $lackey_proc.stdout.close
+  STDERR.close
+end
+$lackey.finish
+$lackey_stderr.close
+userout $lackey_stderr.getlines
+if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+  userout("datalackey exit: #{$lackey_proc.exit_code}")
+end
+exit failed ? 1 : 0
+
+# Makefile:
+#---
+#- target-name: # Multiple target names allowed.
+#  - list
+#  - of
+#  - requirements # Are target names elsewhere. Need to succeed before commands.
+#  commands: # Fixed name for the commands part.
+#  - list
+#  - of
+#  - commands # And if all pass then target has been fulfilled.
+#  comment: # Ignored.
+#  include: # a file name to include.
+#- list: # map to nothing to indicate no requirements. YAML practicalities?
+#  commands:
+#  - command-list
+#- of: # etc...
+#  - reqs-list
+#  commands: # yadayada...
+#- requirements: # No commands and no requirements, should be fulfilled always?
+
+# Handler for each command decides when send (if any) returns.
+# We can leave PatternActions to produce errors in the background.
+
+# Pick subset of fsm commands since we are thought to need just
+# run, launch, feed, close, terminate.
+
