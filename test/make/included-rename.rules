@@ -1,0 +1,7 @@
+---
+- rename-test: first
+  commands:
+  - rename label new_name
+  - wait_data new_name
+  - ruby: userout $lackey.data.keys.sort.join(' ')
+  - ruby: $handlers.set_error('Not found.') unless $lackey.data.has_key? 'new_name'

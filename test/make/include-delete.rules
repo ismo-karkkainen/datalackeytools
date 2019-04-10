@@ -1,0 +1,13 @@
+---
+- first:
+  commands:
+  - set pipes in JSON stdin out JSON stdout
+  - [ launch, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
+  - wait_data label
+- include: included-rename.rules
+- tgt: rename-test
+  commands:
+  - delete new_name
+  - run delay program sleep 1
+  - ruby: userout $lackey.data.keys.sort.join(' ')
+  - ruby: $handlers.set_error('Found.') if $lackey.data.has_key? 'new_name'

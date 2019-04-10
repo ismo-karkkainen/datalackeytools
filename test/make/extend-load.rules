@@ -1,0 +1,10 @@
+---
+- tgt: []
+  commands:
+  - ruby: |
+      d = File.dirname($handlers.rule_source)
+      load(File.join(d, 'extend-load.rb'))
+      ExtensionCommand.new
+  - [ print, "Using extension command." ]
+  - extension with parameters
+  - extension

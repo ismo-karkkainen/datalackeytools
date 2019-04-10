@@ -2,7 +2,7 @@
 
 require 'optparse'
 require 'yaml'
-require 'json'
+require 'tempfile'
 require 'datalackeylib'
 
 $CMDOUT = STDOUT
@@ -10,6 +10,7 @@ $USEROUT = STDERR
 $OVERWRITE_ACTION = :replace
 $FOLLOW = 0
 $QUIET = false
+$TERMINATE_DELAY = 5
 # For case when we run datalackey.
 $LACKEY = nil
 $MEMORY = nil
@@ -17,7 +18,7 @@ $DIRECTORY = nil
 $PERMISSIONS = nil
 $ECHO = false
 $RULEFILE = nil
-root_dir = Dir.pwd
+$root_dir = Dir.pwd
 
 parser = OptionParser.new do |opts|
   opts.summary_indent = '  '
@@ -38,6 +39,9 @@ parser = OptionParser.new do |opts|
   end
   opts.on('-q', '--quiet', 'Suppress normal command output.') do
     $QUIET = true
+  end
+  opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
+    $TERMINATE_DELAY = d
   end
   opts.on('-h', '--help', 'Print this help and exit.') do
     $USEROUT.puts opts
@@ -63,6 +67,17 @@ DatalackeyProcess.options_for_OptionParser(parser, true,
   Proc.new { |arg| $ECHO = arg })
 parser.parse!
 
+begin
+  $TERMINATE_DELAY = Float($TERMINATE_DELAY)
+rescue ArgumentError
+  $USEROUT.puts "Terminate delay not a number."
+  exit 1
+end
+if $TERMINATE_DELAY < 0
+  $USEROUT.puts "Terminate delay less than 0."
+  exit 1
+end
+
 if ARGV.empty?
   $USEROUT.puts "No targets."
   exit 1
@@ -86,10 +101,14 @@ def fileline(source, index = nil)
   return "#{source} : #{index}"
 end
 
-def load_makefile(filename, current_directory, parent_includes = [])
+def load_rulefile(filename, current_directory, parent_includes = [])
   userout("Loading: #{filename} from #{current_directory}") if $FOLLOW > 3
   begin
     fullname = File.realpath(filename, current_directory)
+    if parent_includes.include? fullname
+      userout "Include loop: #{filename} from #{current_directory}"
+      return nil
+    end
     contents = YAML.load(File.read(fullname))
     directory = File.dirname(fullname)
   rescue Errno::ENOENT => e
@@ -117,7 +136,7 @@ def load_makefile(filename, current_directory, parent_includes = [])
     include_name = item.delete 'include'
     unless include_name.nil?
       parent_includes.push fullname
-      included = load_makefile(include_name, directory, parent_includes)
+      included = load_rulefile(include_name, directory, parent_includes)
       parent_includes.pop
       if included.nil?
         userout " .. #{fileline(fullname, index)}"
@@ -126,6 +145,7 @@ def load_makefile(filename, current_directory, parent_includes = [])
       rules.concat included
     end
     cmds = item.delete 'commands'
+    cmds = [ cmds ] if cmds.is_a? String
     cmds = [] if cmds.nil?
     cmds.each_index do |k|
       cmds[k] = cmds[k].split(' ') if cmds[k].is_a? String
@@ -163,13 +183,13 @@ end
 
 if $RULEFILE.nil?
   $RULEFILE = "Rulefile"
-  root_dir = Dir.pwd
+  $root_dir = Dir.pwd
 else
-  root_dir = File.dirname($RULEFILE)
-  root_dir = Dir.pwd() if root_dir == '.'
+  $root_dir = File.dirname($RULEFILE)
+  $root_dir = Dir.pwd() if $root_dir == '.'
   $RULEFILE = File.basename($RULEFILE)
 end
-rules = load_makefile($RULEFILE, root_dir)
+rules = load_rulefile($RULEFILE, $root_dir)
 exit(2) if rules.nil?
 
 # Overwrite checks. Helper mapping from target to rule to find rules faster.
@@ -194,7 +214,7 @@ while not todo.empty?
   next if needed.has_key? tgt
   rule = target2rule[tgt]
   if rule.nil?
-    userout "#{fileline(rule)} : #{tgt} requires unprovided: #{tgt}"
+    userout "Unprovided: #{tgt}"
     exit 2
   end
   rule[:needs] = { }
@@ -254,11 +274,21 @@ order = needed.values
 def compare(a, b)
   return -1 if b[:needs].has_key? a[:target]
   return 1 if a[:needs].has_key? b[:target]
-  c = a[:needs].size <=> b[:needs].size
-  return c unless c == 0
-  c = a[:neededby].size <=> b[:neededby].size
-  return c unless c == 0
-  return a[:commands].length <=> b[:commands].length
+  aidx = ARGV.index(a[:target])
+  bidx = ARGV.index(b[:target])
+  if aidx.nil?
+    if bidx.nil?
+      c = a[:needs].size <=> b[:needs].size
+      return c unless c == 0
+      c = a[:neededby].size <=> b[:neededby].size
+      return c unless c == 0
+      return a[:commands].length <=> b[:commands].length
+    end
+    return 1
+  else
+    return 1 if bidx.nil?
+    return aidx <=> bidx
+  end
 end
 order.sort! { |a, b| compare(a, b) }
 
@@ -281,6 +311,7 @@ class Handlers
     @variables = Hash.new(nil)
     @error_mutex = Mutex.new
     @error = nil
+    @rule = nil
   end
 
   def register(name, object, expand_skip_count = 0)
@@ -294,6 +325,10 @@ class Handlers
 
   def get_binding
     return binding
+  end
+
+  def rule_source
+    return @rule.nil? ? nil : @rule.fetch(:load, { }).fetch(:source, nil)
   end
 
   def expand(item, info, seen = [])
@@ -328,7 +363,8 @@ class Handlers
     return item
   end
 
-  def run(command, rule)
+  def run(cmd, rule)
+    @rule = rule
     @error_mutex.synchronize { return false unless @error.nil? }
     info = []
     s_cmd = cmd.to_s
@@ -383,14 +419,517 @@ class Handlers
       userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unknown command: #{name}"
       return false
     end
-    userout("Command: #{}") if $FOLLOW == 1
-    return false unless handler.handle(expanded)
+    userout("Command: #{name}") if $FOLLOW == 1
+    return false unless handler[:object].handle(expanded)
     return @error_mutex.synchronize { @error.nil? }
   end
 end
 $handlers = Handlers.new
 
+$terminator = Proc.new do |action, message, vars|
+  case action.first
+  when :error
+    $handlers.set_error(message.join(' '))
+    true
+  when :exitcode
+    $handlers.set_error(message.join(' ')) if vars.first != 0
+    true
+  else false
+  end
+end
+
 # Command handlers.
+
+class Command
+  attr_reader :action
+
+  def initialize(name, expand_skip = 0)
+    $handlers.register(name, self, expand_skip)
+    @name = name
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    $lackey.send(@action, cmd)
+    return true
+  end
+
+  def assert(cmd, minlen, maxlen = nil)
+    if cmd.length < minlen
+      userout "Command #{@name} too short: #{cmd.length} < #{minlen}"
+      return false
+    end
+    return true if maxlen.nil?
+    if maxlen < cmd.length
+      userout "Command #{@name} too long: #{maxlen} < #{cmd.length}"
+      return false
+    end
+    return true
+  end
+end
+
+class CommentCommand < Command
+  def initialize
+    super('comment', 1000000)
+  end
+
+  def handle(cmd)
+    return true
+  end
+end
+CommentCommand.new
+
+class SetCommand < Command
+  def initialize
+    super('set', 2)
+  end
+
+  def handle(cmd)
+    return false unless assert(cmd, 3)
+    $handlers.variables[cmd[1]] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    return true
+  end
+end
+SetCommand.new
+
+class DefaultCommand < Command
+  def initialize
+    super('default', 2)
+  end
+
+  def handle(cmd)
+    return false unless assert(cmd, 3)
+    v = cmd[1]
+    unless $handlers.variables.has_key? v
+      $handlers.variables[v] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    end
+    return true
+  end
+end
+DefaultCommand.new
+
+class UnsetCommand < Command
+  def initialize
+    super('unset', 1000000)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    cmd.each { |name| $handlers.variables.delete name }
+    return true
+  end
+end
+UnsetCommand.new
+
+class AssertVarCommand < Command
+  def initialize
+    super('assert_var', 1000000)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    unset = []
+    cmd.each { |name| unset.push(name) unless $handlers.variables.has_key? name }
+    userout("Not set: #{unset.join(' ')}") unless unset.empty?
+    return unset.empty?
+  end
+end
+AssertVarCommand.new
+
+class AssertNotVar < Command
+  def initialize
+    super('assert_notvar', 1000000)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    set = []
+    cmd.each { |name| set.push(name) if $handlers.variables.has_key? name }
+    userout("Set: #{set.join(' ')}") unless set.empty?
+    return set.empty?
+  end
+end
+AssertNotVar.new
+
+class AssertDataCommand < Command
+  def initialize
+    super('assert_data')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.shift
+    data = $lackey.data
+    missing = []
+    cmd.each { |name| missing.push(name) unless data.has_key? name }
+    userout("Missing: #{missing.join(' ')}") unless missing.empty?
+    return missing.empty?
+  end
+end
+AssertDataCommand.new
+
+class RunBase < Command
+  @@actions_run_common = {
+    :error => [ "run", "error", "*" ],
+    :note => {
+      :run_error_input_failed => [ "run", "error", "input", "failed" ],
+      :run_child_error_output_format => [ [ "run", "error", "format" ],
+        [ "error", "format" ] ]
+    },
+    :exitcode => [ "run", "exit", "?" ],
+    :bytes => [ "run", "bytes", "?", "*" ]
+  }
+  @@prev_bytes_mutex = Mutex.new
+  @@prev_bytes_id = nil
+
+  def initialize(name)
+    @msgmaker = Proc.new do |action, message, vars|
+      message_maker(action, message, vars)
+    end
+    super(name)
+  end
+
+  def message_maker(action, message, vars)
+    out = []
+    case action.first
+    when :note then
+      case action.last
+      when :run_error_input_failed
+        out.push "Output from #{message[0]} failed."
+        $handlers.set_error message.join(' ')
+      when :run_child_error_output_format
+        out.push "Output to #{message[0]} failed."
+        $handlers.set_error message.join(' ')
+      end
+    when :bytes
+      id = message[0]
+      @@prev_bytes_mutex.synchronize do
+        if id != @@prev_bytes_id
+          out.push "#{id}:"
+          @prev_bytes_id = id
+        end
+      end
+      out.push ''.concat(*vars)
+    end
+    userout(out) unless $QUIET
+    return not(out.empty?)
+  end
+
+  def handle(cmd)
+    return false unless assert(cmd, 4)
+    t = cmd[0] # Swap command and user-given identifier.
+    cmd[0] = cmd[1]
+    cmd[1] = t
+    # Locate executable unless absolute path.
+    idx = cmd.index 'program'
+    unless idx.nil? or idx + 1 == cmd.length
+      cmd[idx + 1] = DatalackeyProcess.locate_executable(cmd[idx + 1],
+        [ Dir.pwd, $root_dir, File.dirname($handlers.rule_source) ])
+    end # Missing program will be found normally and causes error.
+    $lackey.send(@action, cmd, true)
+    return true
+  end
+end
+
+class RunCommand < RunBase
+  def initialize
+    super('run')
+    @action = PatternAction.new([ @@actions_run_common ],
+      [ @msgmaker, $terminator ])
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    unless cmd.include? 'end-feed'
+      c = cmd[0...2]
+      c.push 'end-feed'
+      c.concat cmd[2...cmd.length]
+      cmd = c
+    end
+    super(cmd)
+  end
+end
+RunCommand.new
+
+class LaunchCommand < RunBase
+  def initialize
+    super('launch')
+    @action = PatternAction.new([
+      { :return => [ 'run', 'running', '?' ],
+        :error => [ 'run', 'terminated', '?' ]},
+      @@actions_run_common ], [ @msgmaker, $terminator ])
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd[0] = 'run'
+    super(cmd)
+  end
+end
+LaunchCommand.new
+
+class ProcessCommand < Command
+  def initialize(name)
+    @action = nil
+    super(name)
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd.concat $lackey.launched.keys if cmd.length == 1
+    return true if cmd.length == 1
+    super(cmd)
+  end
+end
+
+class CloseCommand < ProcessCommand
+  def initialize
+    super('close')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    cmd[0] = 'end-feed'
+    super(cmd)
+  end
+end
+CloseCommand.new
+
+class TerminateCommand < ProcessCommand
+  def initialize
+    super('terminate')
+  end
+end
+TerminateCommand.new
+
+class FeedCommand < Command
+  def initialize
+    super('feed')
+    @action = PatternAction.new(
+      [ { :error => [ 'feed', 'error', '*' ] } ],
+      [ $terminator ])
+  end
+end
+FeedCommand.new
+
+class WaitProcessCommand < Command
+  def initialize
+    super('wait_process')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    return false unless assert(cmd, 2)
+    begin
+      deadline = Time.new + Float(cmd[1])
+    rescue ArgumentError
+      userout "Not a number: #{cmd[1]}"
+      return false
+    end
+    if 2 < cmd.length
+      waited = $lackey.launched.keys
+    else
+      waited = cmd[2...cmd.length]
+    end
+    while (Time.new <=> deadline) == -1
+      sleep(0.2)
+      remains = false
+      current = $lackey.process.keys
+      waited.each { |id| remains = (remains or current.include? id) }
+      return true unless remains
+    end
+  end
+end
+WaitProcessCommand.new
+
+class WaitDataCommand < Command
+  def initialize
+    super('wait_data')
+  end
+
+  def handle(cmd)
+    cmd.flatten!
+    unseen = cmd[1...cmd.length]
+    while true
+      data = $lackey.data
+      unseen.delete_if { |u| data.has_key? u }
+      return true if unseen.empty?
+      sleep(0.2)
+    end
+  end
+end
+WaitDataCommand.new
+
+class DeleteCommand < Command
+  def initialize
+    super('delete')
+    @action = nil
+  end
+end
+DeleteCommand.new
+
+class RenameCommand < Command
+  def initialize
+    super('rename')
+    @action = nil
+  end
+end
+RenameCommand.new
+
+class PrintCommand < Command
+  def initialize
+    super('print')
+  end
+
+  def handle(cmd)
+    return true if $QUIET
+    # Array containing arrays will be treated as multi-line output.
+    cmd.shift
+    multi = false
+    cmd.each_index do |k|
+      next unless cmd[k].is_a? Array
+      multi = true
+      cmd[k] = cmd[k].flatten.join(' ')
+    end
+    userout cmd.join(multi ? "\n" : ' ')
+    return true
+  end
+end
+PrintCommand.new
+
+class ValueCommand < Command
+  def handle_with_map(cmd, map)
+    return true if $QUIET
+    cmd.flatten!
+    cmd.shift
+    out = []
+    cmd.each { |id| out.push "#{id} : #{map.fetch(id, 'NOT FOUND')}" }
+    userout out
+    return true
+  end
+end
+
+class SerialCommand < ValueCommand
+  def initialize
+    super('serial')
+  end
+
+  def handle(cmd)
+    handle_with_map(cmd, $lackey.data)
+  end
+end
+SerialCommand.new
+
+class PIDCommand < ValueCommand
+  def initialize
+    super('pid')
+  end
+
+  def handle(cmd)
+    handle_with_map(cmd, $lackey.process)
+  end
+end
+PIDCommand.new
+
+class ShellCommand < Command
+  def initialize
+    @rule =  { 'argv' => '*', 'script' => '*', 'stdout' => '?', 'stderr' => '?', '*' => '*' }
+    super('script')
+  end
+
+  def handle(cmd)
+    # Get interpreter and check that it exists.
+    cmd.delete 'comment'
+    argv = cmd.fetch('argv', [])
+    cmd.delete 'argv'
+    script = cmd['script'] # Pre-requisite for getting this far, exists.
+    cmd.delete 'script'
+    vout = cmd.fetch('stdout', nil)
+    cmd.delete 'stdout'
+    verr = cmd.fetch('stderr', nil)
+    cmd.delete 'stderr'
+    vin = cmd.fetch('stdin', nil)
+    cmd.delete 'stdin'
+    if cmd.length != 1
+      userout "Multiple interpreters: #{cmd.keys.sort.join(' ')}"
+      return false
+    end
+    interpreter = cmd.keys.first
+    hashbangargs = cmd[cmd.keys.first]
+    hashbangargs = hashbangargs.join(' ') if hashbangargs.is_a? Array
+    unless File.exist?(interpreter) and File.executable?(interpreter)
+      userout "Not found or not an executable: #{interpreter}"
+      return false
+    end
+    # Write script into a temporary file.
+    temp = Tempfile.new('make', Dir.tmpdir)
+    begin
+      temp.puts "#!#{interpreter} #{hashbangargs}"
+      temp.puts script
+      temp.chmod(0700)
+      temp.close
+      argv.prepend temp.path
+    rescue StandardError => e
+      userout "Shell script prepare exception:\n#{e.to_s}"
+      temp.close!
+      return false
+    end
+    wait = nil
+    stdin = nil
+    rd_out = nil
+    rd_err = nil
+    exitcode = 0
+    begin
+      # Run script with arguments.
+      stdin, stdout, stderr, wait = Open3.popen3(*argv)
+      rd_out = vout.nil? ? DiscardReader.new(stdout) : StoringReader.new(stdout)
+      rd_err = verr.nil? ? DiscardReader.new(stderr) : StoringReader.new(stderr)
+      stdin.puts(vin) unless vin.nil?
+      stdin.close
+      wait.join
+      $handlers.variables[vout] = rd_out.getlines.join("\n") unless vout.nil?
+      $handlers.variables[verr] = rd_err.getlines.join("\n") unless verr.nil?
+      exitcode = wait.value.exitstatus
+      wait = nil
+      userout("Shell exit: #{exitcode}") if exitcode != 0
+    rescue StandardError => e
+      userout "Shell run exception:\n#{e.to_s}"
+      return false
+    ensure
+      stdin.close unless stdin.nil?
+      rd_out.close unless rd_out.nil?
+      rd_err.close unless rd_err.nil?
+      wait.join unless wait.nil?
+      temp.close!
+    end
+    return exitcode == 0
+  end
+end
+ShellCommand.new
+
+class RubyCommand < Command
+  def initialize
+    super('ruby')
+  end
+
+  def handle(cmd)
+    # Access to variables via @variables in binding.
+    script = cmd['ruby']
+    script = script.join("\n") if script.is_a? Array
+    begin
+      eval(script, $handlers.get_binding)
+    rescue StandardError => e
+      userout "Eval failed: #{e.to_s}"
+      return false
+    end
+    return true
+  end
+end
+RubyCommand.new
+
 
 def notification_check(action, mesage, vars)
   case action.first
@@ -441,9 +980,10 @@ order.each do |rule|
   failed = $lackey.closed?
   userout("Rule: #{rule[:target]}") if $FOLLOW > 0
   rule[:commands].each do |cmd|
-    next if run(cmd, rule)
+    next if $handlers.run(cmd, rule)
     userout "#{fileline(rule)} : #{rule[:target]} command failed: #{cmd}"
     failed = true
+    break
   end
   break if failed
 end
@@ -453,7 +993,7 @@ unless $lackey.closed?
   endfeed.concat $lackey.launched.keys
   $lackey.send(nil, endfeed, true) if endfeed.length > 2
 end
-terminate_time = Time.new + 5
+terminate_time = Time.new + $TERMINATE_DELAY
 until $lackey.closed?
   sleep(0.1)
   procs = $lackey.launched.keys
@@ -461,6 +1001,7 @@ until $lackey.closed?
   next if (Time.new <=> terminate_time) == -1
   terminate = [ nil, 'terminate' ]
   terminate.concat procs
+  $lackey.send(nil, terminate, true) if terminate.length > 2
   break
 end
 
@@ -478,7 +1019,7 @@ if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
 end
 exit failed ? 1 : 0
 
-# Makefile:
+# Rulefile:
 #---
 #- target-name: # Multiple target names allowed.
 #  - list
@@ -490,17 +1031,10 @@ exit failed ? 1 : 0
 #  - commands # And if all pass then target has been fulfilled.
 #  comment: # Ignored.
 #  include: # a file name to include.
-#- list: # map to nothing to indicate no requirements. YAML practicalities?
+#- list: # map to nothing to indicate no requirements.
 #  commands:
 #  - command-list
 #- of: # etc...
 #  - reqs-list
 #  commands: # yadayada...
-#- requirements: # No commands and no requirements, should be fulfilled always?
-
-# Handler for each command decides when send (if any) returns.
-# We can leave PatternActions to produce errors in the background.
-
-# Pick subset of fsm commands since we are thought to need just
-# run, launch, feed, close, terminate.
-
+#- requirements: # No commands and no requirements.

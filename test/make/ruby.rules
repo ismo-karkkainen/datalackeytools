@@ -1,0 +1,12 @@
+---
+- tgt:
+  commands:
+  - set onevar value1
+  - set twovar value2
+  - ruby: |
+      lines = []
+      $handlers.variables.keys.sort.each do |key|
+        next unless key == 'onevar' or key == 'twovar'
+        lines.push "#{key} => #{$handlers.variables[key].to_s}"
+      end
+      userout lines

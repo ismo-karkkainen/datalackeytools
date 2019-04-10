@@ -1,0 +1,6 @@
+---
+- tgt: []
+  commands:
+  - set exists value
+  - assert_var exists
+  - assert_var not_set

@@ -1,0 +1,8 @@
+---
+- tgt: []
+  commands:
+  - set exists 1
+  - default exists 2
+  - default unset 3
+  - assert_var exists
+  - assert_var unset

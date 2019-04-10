@@ -43,6 +43,23 @@ $MAKE -m --stderr --follow 4 --rules make/req-list-types.rules c
 $MAKE -m --stderr --follow 4 --rules make/overwrite.rules a
 $MAKE -m --stderr --follow 4 --warn --rules make/overwrite.rules a
 $MAKE -m --stderr --follow 4 --error --rules make/overwrite.rules a
+$MAKE -m --stderr --follow 4 --rules make/assert_var.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/default.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/extend-load.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/extend.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/feed-test.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/feed-test.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/include-delete.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/include-loop.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/include-overwrite.rules tgt
+$MAKE -m --stderr --follow 4 --terminate_delay 2 --rules make/launch-terminate.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/launch-wait.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/rename-delete.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/ruby.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/run-error.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/run-exit.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/set-print.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/shell.rules tgt
 EOF
 fi
 

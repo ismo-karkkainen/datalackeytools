@@ -478,9 +478,10 @@ class RunBase < Command
     out = []
     case action.first
     when :note
+      # Should signal error, presumably.
       case action.last
       when :run_error_input_failed
-        out.push "Output to #{message[0]} failed."
+        out.push "Output from #{message[0]} failed."
       when :run_child_error_output_format
         out.push "Output to #{message[0]} failed."
       end
@@ -589,7 +590,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { 'error' => [ 'feed', 'error', '*' ] } ],
+      [ { :error => [ 'feed', 'error', '*' ] } ],
       [ $signal_sender ])
   end
 end
@@ -806,8 +807,8 @@ class ShellCommand < Command
       stdin.puts(vin) unless vin.nil?
       stdin.close
       wait.join
-      $machine.variables[vout] = rd_out.readlines.join("\n") unless vout.nil?
-      $machine.variables[verr] = rd_err.readlines.join("\n") unless verr.nil?
+      $machine.variables[vout] = rd_out.getlines.join("\n") unless vout.nil?
+      $machine.variables[verr] = rd_err.getlines.join("\n") unless verr.nil?
       exitcode = wait.value.exitstatus
       wait = nil
       $machine.set_error("Shell exit: #{exitcode}") if exitcode != 0

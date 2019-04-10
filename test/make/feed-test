@@ -1,0 +1,21 @@
+#!/usr/bin/env ruby
+
+require 'json'
+
+out = { }
+ARGV.each do |arg|
+  out[arg] = arg
+end
+STDOUT.puts(JSON.generate(out)) unless out.empty?
+
+out = { }
+count = 0
+begin
+  while line = STDIN.readline
+    count += 1
+    obj = JSON.load(line)
+    out[count.to_s] = line.length
+  end
+rescue EOFError
+  STDOUT.puts(JSON.generate(out)) unless out.empty?
+end

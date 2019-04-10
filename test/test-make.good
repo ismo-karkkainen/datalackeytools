@@ -64,3 +64,233 @@ Rule: a
 Loading: overwrite.rules from make
 a from make/overwrite.rules : 0 replaced by /Users/iak/Projects/datatools/datalackeyshell/test/make/overwrite.rules : 1
 ####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/assert_var.rules tgt
+####CODE 1
+####OUT
+Loading: assert_var.rules from make
+Rule: tgt
+Command: ["set", "exists", "value"]
+Command: ["assert_var", "exists"]
+Command: ["assert_var", "not_set"]
+Not set: not_set
+make/assert_var.rules : 0 : tgt command failed: ["assert_var", "not_set"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/default.rules tgt
+####CODE 0
+####OUT
+Loading: default.rules from make
+Rule: tgt
+Command: ["set", "exists", "1"]
+Command: ["default", "exists", "2"]
+Command: ["default", "unset", "3"]
+Command: ["assert_var", "exists"]
+Command: ["assert_var", "unset"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/extend-load.rules tgt
+####CODE 0
+####OUT
+Loading: extend-load.rules from make
+Rule: tgt
+Command: {"ruby"=>"d = File.dirname($handlers.rule_source)\nload(File.join(d, 'extend-load.rb'))\nExtensionCommand.new\n"}
+Command: ["print", "Using extension command."]
+Using extension command.
+Command: ["extension", "with", "parameters"]
+Extension: with parameters
+Command: ["extension"]
+No parameters.
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/extend.rules tgt
+####CODE 0
+####OUT
+Loading: extend.rules from make
+Rule: tgt
+Command: {"ruby"=>"handler = Command.new('extension')\nhandler_meta = class << handler; self; end\nhandler_meta.send(:define_method, :handle) do |cmd|\n  cmd.flatten!\n  if cmd.length == 1\n    userout \"No parameters.\"\n    return true\n  end\n  userout \"Extension: \#{cmd[1...cmd.length].join(' ')}\"\n  return true\nend\n"}
+Command: ["print", "Now using the new method."]
+Now using the new method.
+Command: ["extension"]
+No parameters.
+Command: ["extension", "with", "parameters"]
+Extension: with parameters
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/feed-test.rules tgt
+####CODE 0
+####OUT
+Loading: feed-test.rules from make
+Rule: tgt
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
+Command: ["launch", "fed", "pipes", "program", "feed-test"]
+Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+Command: ["wait_data", "label_and_value"]
+Command: ["feed", "fed", "input", "label_and_value", "renamed"]
+Command: ["feed", "fed", "direct", "123", "direct_value"]
+Command: ["close", "fed"]
+Command: ["wait_data", "1", "2"]
+Command: ["serial", "label_and_value", "1", "2"]
+label_and_value : 1
+1 : 2
+2 : 3
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/feed-test.rules tgt
+####CODE 0
+####OUT
+Loading: feed-test.rules from make
+Rule: tgt
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
+Command: ["launch", "fed", "pipes", "program", "feed-test"]
+Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+Command: ["wait_data", "label_and_value"]
+Command: ["feed", "fed", "input", "label_and_value", "renamed"]
+Command: ["feed", "fed", "direct", "123", "direct_value"]
+Command: ["close", "fed"]
+Command: ["wait_data", "1", "2"]
+Command: ["serial", "label_and_value", "1", "2"]
+label_and_value : 1
+1 : 2
+2 : 3
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/include-delete.rules tgt
+####CODE 0
+####OUT
+Loading: include-delete.rules from make
+Loading: included-rename.rules from make
+Rule: first
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["wait_data", "label"]
+Rule: rename-test
+Command: ["rename", "label", "new_name"]
+Command: ["wait_data", "new_name"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+new_name
+Command: {"ruby"=>"$handlers.set_error('Not found.') unless $lackey.data.has_key? 'new_name'"}
+Rule: tgt
+Command: ["delete", "new_name"]
+Command: ["run", "delay", "program", "sleep", "1"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+
+Command: {"ruby"=>"$handlers.set_error('Found.') if $lackey.data.has_key? 'new_name'"}
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/include-loop.rules tgt
+####CODE 2
+####OUT
+Loading: include-loop.rules from make
+Loading: include-loop.rules from make
+Include loop: include-loop.rules from make
+ .. make/include-loop.rules : 1
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/include-overwrite.rules tgt
+####CODE 0
+####OUT
+Loading: include-overwrite.rules from make
+Loading: included-overwriter.rules from make
+Rule: first
+Command: ["set", "overwritten", "value"]
+Rule: tgt
+Command: ["set", "overwriter", "overwriter-value-set"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --terminate_delay 2 --rules make/launch-terminate.rules tgt
+####CODE 0
+####OUT
+Loading: launch-terminate.rules from make
+Rule: tgt
+Command: ["launch", "sleeper", "program", "sleep", "10"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/launch-wait.rules tgt
+####CODE 0
+####OUT
+Loading: launch-wait.rules from make
+Rule: tgt
+Command: ["launch", "sleeper", "program", "sleep", "3"]
+Command: ["wait_process", "4", "sleeper"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/rename-delete.rules tgt
+####CODE 0
+####OUT
+Loading: rename-delete.rules from make
+Rule: tgt
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["wait_data", "label"]
+Command: ["rename", "label", "new_name"]
+Command: ["wait_data", "new_name"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+new_name
+Command: {"ruby"=>"$handlers.set_error('Not found.') unless $lackey.data.has_key? 'new_name'"}
+Command: ["delete", "new_name"]
+Command: ["run", "delay", "program", "sleep", "1"]
+Command: {"ruby"=>"userout $lackey.data.keys.sort.join(' ')"}
+
+Command: {"ruby"=>"$handlers.set_error('Found.') if $lackey.data.has_key? 'new_name'"}
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/ruby.rules tgt
+####CODE 0
+####OUT
+Loading: ruby.rules from make
+Rule: tgt
+Command: ["set", "onevar", "value1"]
+Command: ["set", "twovar", "value2"]
+Command: {"ruby"=>"lines = []\n$handlers.variables.keys.sort.each do |key|\n  next unless key == 'onevar' or key == 'twovar'\n  lines.push \"\#{key} => \#{$handlers.variables[key].to_s}\"\nend\nuserout lines\n"}
+onevar => value1
+twovar => value2
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/run-error.rules tgt
+####CODE 1
+####OUT
+Loading: run-error.rules from make
+Rule: tgt
+Command: ["run", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
+make/run-error.rules : 0 : tgt command failed: ["run", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/run-exit.rules tgt
+####CODE 0
+####OUT
+Loading: run-exit.rules from make
+Rule: tgt
+Command: ["run", "sleeper", "program", "sleep", "1"]
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/set-print.rules tgt
+####CODE 0
+####OUT
+Loading: set-print.rules from make
+Rule: first
+Command: ["set", "threelevel", "twolevel"]
+Command: ["set", "twolevel", "onelevel"]
+Command: ["set", "onelevel", "lvl1"]
+Rule: tgt
+Command: ["print", "onelevel", "twolevel", "threelevel"]
+Expanded: ["print", "lvl1", "lvl1", "lvl1"]
+lvl1 lvl1 lvl1
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/shell.rules tgt
+####CODE 1
+####OUT
+Loading: shell.rules from make
+Rule: tgt
+Command: ["set", "shellscript", "echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"]
+Command: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"shellscript"}
+Expanded: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Command: ["print", "StdOut", "stdout-receiving-variable"]
+Expanded: ["print", "StdOut", "To stdout\narg1 arg2"]
+StdOut To stdout
+arg1 arg2
+Command: ["print", "StdErr", "stderr-receiving-variable"]
+Expanded: ["print", "StdErr", "To stderr"]
+StdErr To stderr
+Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
+Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"shellscript"}
+Expanded: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Command: ["print", "StdOut", "stdout-receiving-variable"]
+StdOut stdout-receiving-variable
+Command: ["print", "StdErr", "stderr-receiving-variable"]
+StdErr stderr-receiving-variable
+Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
+Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
+Shell exit: 1
+make/shell.rules : 0 : tgt command failed: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
+####ERR

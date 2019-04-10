@@ -1,0 +1,4 @@
+---
+- tgt:
+  commands:
+  - launch sleeper program sleep 10

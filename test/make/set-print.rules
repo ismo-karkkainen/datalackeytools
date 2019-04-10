@@ -1,0 +1,10 @@
+---
+- first:
+  commands:
+  - set threelevel twolevel
+  - set twolevel onelevel
+  - set onelevel lvl1
+- tgt:
+  - first
+  commands:
+  - print onelevel twolevel threelevel

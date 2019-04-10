@@ -1,0 +1,5 @@
+---
+- first:
+  commands:
+  - set overwritten value
+  include: included-overwriter.rules
