@@ -36,6 +36,10 @@ There are two commands that are mappings: script and ruby. The former allows you
 
 See test/fsm and examples directories for how to use ruby/script and how to use re-usable states, should you need them.
 
+# Make
+
+Given needed targets, finds their dependencies and runs commands in required order. Targets are not files nor data labels. Otherwise resembles make. Commands are mainly the same as in datalackey-fsm.
+
 # Run
 
 A simple tool meant only to run a controller under datalackey, such that the controller does not need to run datalackey itself but can operate as a child process. Hence you can use quick hacks and such fairly easily as long as you can communicate with datalackey.
