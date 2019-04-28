@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+# Copyright 2019 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 # Argument handling and checking

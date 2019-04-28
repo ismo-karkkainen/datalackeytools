@@ -52,3 +52,8 @@ You can use the DatalackeyProcess to actually run datalackey if you want, or if 
 
 DatalackeyIO handles reading datalackey process and sending it your commands and data. Each command is paired with PatternAction. That is a mapping from datalackey output (see output of datalackey -m --report commands) to category/action pairs you can then use in conditional statement to act accordingly. DatalackeyIO also keeps track of processes and data by tracking notifications.
 
+# License
+
+Copyright (C) 2019 Ismo Kärkkäinen
+
+Licensed under Universal Permissive License. See License.txt.
