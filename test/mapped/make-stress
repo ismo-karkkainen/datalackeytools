@@ -1,0 +1,52 @@
+#!/usr/bin/env ruby
+
+if ARGV.length != 2
+  STDERR.puts "Usage: test-mapped file-count max-size-bytes"
+  exit 1
+end
+
+count = Integer(ARGV[0])
+size = Integer(ARGV[1])
+
+if count <= 0 or size <= 0
+  STDERR.puts "Both count #{count} and size #{size} must be > 0"
+  exit 2
+end
+
+names = []
+for k in 1..count
+  s = size * k / count
+  name = "a#{k}"
+  f = File.open(name, 'w')
+  if s < 40
+    f.write '"'
+    for n in 0...(s - 2)
+      f.write 'a'
+    end
+    f.write '"'
+  else
+    f.puts '["aaaaaaaaaaaaaaa"'
+    sep = ''
+    for n in 0...((s / 20) - 1)
+      f.puts ',"aaaaaaaaaaaaaaaa"'
+    end
+    f.puts ']'
+  end
+  f.close
+  names.push name
+end
+
+args = []
+names.each do |n|
+  args.push n
+  args.push "o#{n}"
+end
+STDOUT.puts args.join(' ')
+
+args = []
+names.each do |n|
+  args.push "o#{n}"
+  args.push "b#{n}"
+end
+STDOUT.puts args.join(' ')
+

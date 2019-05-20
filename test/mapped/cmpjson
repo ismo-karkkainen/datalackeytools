@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+
+require 'json'
+
+a = JSON.parse(IO.read(ARGV.first)).to_json
+b = JSON.parse(IO.read(ARGV.last)).to_json
+exit(a == b ? 0 : 1)

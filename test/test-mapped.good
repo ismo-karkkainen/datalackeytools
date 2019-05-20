@@ -1,0 +1,81 @@
+####COMMAND run.sh files2mapped input2mapped missing
+####CODE 1
+####OUT
+files2mapped failure.
+####ERR
+cp: missing: No such file or directory
+Not a file: missing
+####COMMAND run.sh files2mapped input2mapped tf1.json
+####CODE 0
+####OUT
+{"a0":1
+}
+####ERR
+####COMMAND run.sh files2mapped input2mapped tfstr.json
+####CODE 0
+####OUT
+{"a0":"str"
+}
+####ERR
+####COMMAND run.sh files2mapped input2mapped tfarray.json
+####CODE 0
+####OUT
+{"a0":[1,"two",{"stuff":3}]
+}
+####ERR
+####COMMAND run.sh files2mapped input2mapped tfobject.json
+####CODE 0
+####OUT
+{"a0":{"key":"value"}
+}
+####ERR
+####COMMAND run.sh files2mapped input2mapped tfinvalid.json
+####CODE 2
+####OUT
+{"a0":unquoted
+}input2mapped failure.
+####ERR
+Error parsing input.
+####COMMAND run.sh files2mapped input2mapped tf1.json tfstr.json tfarray.json tfobject.json
+####CODE 0
+####OUT
+{"a0":1
+,"a1":"str"
+,"a2":[1,"two",{"stuff":3}]
+,"a3":{"key":"value"}
+}
+####ERR
+####COMMAND wait.sh files2mapped input2mapped missing
+####CODE 1
+####OUT
+files2mapped failure.
+####ERR
+cp: missing: No such file or directory
+Not a file: missing
+####COMMAND wait.sh files2mapped input2mapped tfstr.json
+####CODE 0
+####OUT
+{"a0":"str"
+}
+####ERR
+####COMMAND wait.sh files2mapped input2mapped tf1.json tfstr.json tfarray.json tfobject.json
+####CODE 0
+####OUT
+{"a0":1
+,"a1":"str"
+,"a2":[1,"two",{"stuff":3}]
+,"a3":{"key":"value"}
+}
+####ERR
+####COMMAND run-stress.sh 10 1000 files2mapped input2mapped
+####CODE 0
+####OUT
+####ERR
+####COMMAND run-stress.sh 100 10000 files2mapped input2mapped
+####CODE 0
+####OUT
+####ERR
+####COMMAND run-stress.sh 200 5000000 files2mapped input2mapped
+####CODE 0
+####OUT
+####ERR

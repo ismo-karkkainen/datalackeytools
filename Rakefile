@@ -1,9 +1,13 @@
 task :default => [ :install ]
 
-desc 'Install programs.'
+desc 'Install programs to PREFIX/bin.'
 task :install => [:installgem] do
   prefix = ENV.fetch('PREFIX', '/usr/local')
+  target = File.join(prefix, 'bin')
+  puts "Using PREFIX #{prefix} to install to #{target}."
+  abort("Target #{target} is not a directory.") unless File.directory? target
   [ 'datalackey-fsm', 'datalackey-make', 'datalackey-run', 'datalackey-shell' ].each do |exe|
+    puts "Installing #{exe}."
     %x(sudo install #{exe} #{prefix}/bin/)
   end
 end
@@ -28,7 +32,7 @@ task :testgem do
   Dir.chdir('datalackeylib') { %x(rake test) }
 end
 
-desc 'Test'
+desc 'Test.'
 task :test => [:testgem] do
   sh './test.sh'
 end

@@ -29,7 +29,7 @@ function cleanup {
 if [ $# -gt 1 ]; then
     for L in "$@"
     do
-        echo $L > $CMDS
+        echo $L >> $CMDS
     done
 else
     cat > $CMDS << EOF
