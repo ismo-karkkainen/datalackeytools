@@ -54,7 +54,7 @@ Rule: a
 ####CODE 0
 ####OUT
 Loading: overwrite.rules from make
-a from make/overwrite.rules : 0 replaced by /Users/iak/Projects/datatools/datalackeyshell/test/make/overwrite.rules : 1
+a from make/overwrite.rules : 0 replaced by make/overwrite.rules : 1
 Rule: b
 Rule: a
 ####ERR
@@ -62,7 +62,7 @@ Rule: a
 ####CODE 2
 ####OUT
 Loading: overwrite.rules from make
-a from make/overwrite.rules : 0 replaced by /Users/iak/Projects/datatools/datalackeyshell/test/make/overwrite.rules : 1
+a from make/overwrite.rules : 0 replaced by make/overwrite.rules : 1
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/assert_var.rules tgt
 ####CODE 1

@@ -39,7 +39,7 @@ trap cleanup 1 2 3 6 15
 
 CMDS=$(mktemp)
 
-function cleanup {
+cleanup () {
     rm -f $CMDS $$.out $$.err
     exit ${1:-0}
 }
@@ -103,9 +103,9 @@ do
     echo "$R $B"
     echo "####CODE $R" >> $RESULTS
     echo "####OUT" >> $RESULTS
-    cat $$.out | sed "s#$(pwd)/##" >> $RESULTS
+    cat $$.out | sed "s#$(pwd)/##g" >> $RESULTS
     echo "####ERR" >> $RESULTS
-    cat $$.err | sed "s#$(pwd)/##" >> $RESULTS
+    cat $$.err | sed "s#$(pwd)/##g" >> $RESULTS
     rm -f $$.out $$.err
 done
 

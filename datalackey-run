@@ -37,7 +37,7 @@ class Arguments
         puts opts
         exit 0
       end
-      opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
+      opts.on('--terminate_delay DELAY', "Seconds to let remaining controller-launched processesi to exit, 0 disables.") do |d|
         @terminate_delay = d
       end
     end

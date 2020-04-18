@@ -111,6 +111,29 @@ datalackey output (see output of datalackey -m --report commands) to
 action you can then use in conditional statement to act accordingly.
 DatalackeyIO also keeps track of processes and data by tracking notifications.
 
+# Testing
+
+You need to build, test and install the gem before other tests. In short:
+
+    rake build
+    rake testgem
+    sudo rake installgem
+    rake test
+    sudo rake install
+
+To run a sub-set of tests run test.sh with argument fsm, make, mapped, or run.
+THey correspond to scripts in test directory.
+
+To run an individual test, the tests print exit code and the command, so you
+can copy the command and prefix "./" to program name and "test/" to the file
+name argument. For example, the output line:
+
+    0 datalackey-fsm -m --stderr -f 4 fsm/launch-terminate.state
+
+Corresponds to command:
+
+    ./datalackey-fsm -m --stderr -f 4 test/fsm/launch-terminate.state
+
 # License
 
 Copyright (C) 2019 Ismo Kärkkäinen
