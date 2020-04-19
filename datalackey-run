@@ -16,7 +16,7 @@ require 'datalackeylib'
 ENV['POSIXLY_CORRECT'] = '1'
 
 class Arguments
-  attr_reader :directory, :memory, :lackey, :permissions, :terminate_delay
+  attr_reader :directory, :memory, :lackey, :permissions, :terminate_delay, :echo
 
   def initialize
     @directory = nil
@@ -24,6 +24,7 @@ class Arguments
     @lackey = nil
     @permissions = nil
     @terminate_delay = nil
+    @echo = false
   end
 
   def parse
@@ -37,7 +38,7 @@ class Arguments
         puts opts
         exit 0
       end
-      opts.on('--terminate_delay DELAY', "Seconds to let remaining controller-launched processesi to exit, 0 disables.") do |d|
+      opts.on('--terminate_delay DELAY', "Seconds to let remaining controller-launched processes to exit, 0 disables.") do |d|
         @terminate_delay = d
       end
     end
@@ -45,7 +46,8 @@ class Arguments
       Proc.new { |arg| @lackey = arg },
       Proc.new { |arg| @memory = arg },
       Proc.new { |arg| @directory = arg },
-      Proc.new { |arg| @permissions = arg }, nil)
+      Proc.new { |arg| @permissions = arg },
+      Proc.new { |arg| @echo = arg })
     parser.parse!
     # Perform sanity checks on the values.
     begin
@@ -61,11 +63,29 @@ class Arguments
           exit 1
         end
       end
+      @echo = @echo ? Proc.new { |json| put_echo json } : nil
     rescue ArgumentError => e
       STDERR.puts e.to_s
       exit 1
     end
   end
+end
+
+def put_echo(json)
+  begin
+    j = JSON.parse(json)
+    if j.is_a?(Array) and j.size > 3 and j[2] == 'bytes'
+      s = ''
+      (3...j.size).each do |k|
+        s += j[k].chr
+      end
+      j.slice!(3, j.size - 3)
+      j.push s
+      json = JSON.generate(j)
+    end
+  rescue StandardError => e
+  end
+  puts json
 end
 
 arguments = Arguments.new
@@ -78,8 +98,8 @@ rescue ArgumentError => e
   puts e.to_s
   exit 1
 end
-lackey_stderr = StoringReader.new($lackey_proc.stderr)
-$lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil)
+$lackey_stderr = StoringReader.new($lackey_proc.stderr)
+$lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil, arguments.echo, arguments.echo)
 
 run_actions = {
   :return => [ { :run_running => [ 'run', 'running', '?' ] } ],
@@ -116,7 +136,8 @@ def run_proc(action, message, vars)
       $quitting = true
     when :note
       case action[1]
-      when :run_error_input_failed then $output.push "Input failed."
+      when :run_error_input_failed
+        $output.push("Input failed.") unless $quitting
       when :run_child_error_output_format
         $output.push "Output format error."
       when :run_terminated
@@ -149,11 +170,31 @@ $lackey.send(run_pa, cmd, true)
 # Main loop
 
 def get_output
-  $output_mutex.synchronize do
+  unless $quitting
+    $output_mutex.synchronize do
+      result = $output
+      $output = []
+      return result
+    end
+  else
     result = $output
     $output = []
     return result
   end
+end
+
+def handle_outputs
+  had_output = false
+  get_output.each do |out|
+    had_output = true
+    puts out
+  end
+  return had_output if $quitting
+  $lackey_stderr.getlines.each do |e|
+    had_output = true
+    STDERR.puts e
+  end
+  return had_output
 end
 
 def id_list_message(command, ids)
@@ -165,18 +206,10 @@ end
 
 terminate_time = nil
 until $lackey.closed?
-  had_output = false
-  get_output.each do |out|
-    had_output = true
-    puts out
-  end
-  lackey_stderr.getlines.each do |e|
-    had_output = true
-    STDERR.puts e
-  end
-  sleep(0.1) unless had_output
+  sleep(0.1) unless handle_outputs
   next unless $quitting
   # Here controller has exited.
+  handle_outputs # Left-overs?
   procs = $lackey.process
   if procs.empty?
     $lackey.close # Causes datalackey to exit. Output closing then exits this.
@@ -194,7 +227,7 @@ end
 
 $lackey_proc.finish
 $lackey.close
-lackey_stderr.close
+$lackey_stderr.close
 $lackey.finish
 if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
   puts("datalackey exit: #{$lackey_proc.exit_code}")
