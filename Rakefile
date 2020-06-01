@@ -6,7 +6,7 @@ task :install => [:installgem] do
   target = File.join(prefix, 'bin')
   puts "Using PREFIX #{prefix} to install to #{target}."
   abort("Target #{target} is not a directory.") unless File.directory? target
-  [ 'datalackey-fsm', 'datalackey-make', 'datalackey-run', 'datalackey-shell' ].each do |exe|
+  [ 'datalackey-fsm', 'datalackey-make', 'datalackey-run', 'datalackey-shell', 'files2mapped', 'input2mapped' ].each do |exe|
     puts "Installing #{exe}."
     %x(sudo install #{exe} #{prefix}/bin/)
   end
