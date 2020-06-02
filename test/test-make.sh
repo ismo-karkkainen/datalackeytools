@@ -60,6 +60,8 @@ $MAKE -m --stderr --follow 4 --rules make/run-error.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/run-exit.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/set-print.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/shell.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/circular-needs.rules a
+$MAKE -m --stderr --follow 4 --rules make/circular-2-needs.rules a
 EOF
 fi
 

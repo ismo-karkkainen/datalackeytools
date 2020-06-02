@@ -220,57 +220,47 @@ while not todo.empty?
     userout "Unprovided: #{tgt}"
     exit 2
   end
-  rule[:needs] = { }
-  rule[:neededby] = { }
   needed[tgt] = rule
   rule[:requirements].each do |req|
     todo.push(req) unless needed.has_key? req
   end
 end
 
-# Helper reverse mapping, what needs target?
-need2needer = { }
-needed.each_pair do |target, rule|
-  rule[:requirements].each do |req|
-    earlier = need2needer.fetch(req, { })
-    earlier[target] = nil
-    need2needer[req] = earlier
+def all_needs(rule, needed, full)
+  unless full.include? rule[:target]
+    full.push rule[:target]
+    rule[:requirements].each do |name|
+      next if full.include? name
+      all_needs(needed[name], needed, full)
+    end
   end
+  return full
 end
 
 needed.each_pair do |target, rule|
   # Find full set of what this needs.
-  needs = rule[:needs]
-  todo = rule[:requirements].clone
-  while not todo.empty?
-    req = todo.pop
-    next if needs.has_key? req
-    needs[req] = nil
-    needed[req][:requirements].each do |r|
-      todo.push(r) unless needs.has_key? r
-      needs[r] = nil
-    end
+  needs = all_needs(rule, needed, [])
+  needs.shift # Name of rule itself is the first item.
+  rule[:needs] = { }
+  needs.each { |name| rule[:needs][name] = nil }
+end
+
+failed = false
+needed.each_pair do |target, rule|
+  needers = []
+  rule[:needs].each_pair do |tgt, r|
+    r = needed[tgt]
+    needers.push(r) if r[:needs].has_key? target
   end
-  # Find full set of what needs this.
-  neededby = rule[:neededby]
-  needers = need2needer[target]
-  todo = needers.nil? ? [] : needers.keys
-  while not todo.empty?
-    req = todo.pop
-    next if neededby.has_key? req
-    neededby[req] = nil
-    need2needer.fetch(req, { }).keys.each do |r|
-      todo.push(r) unless neededby.has_key? r
-      neededby[r] = nil
+  unless needers.empty?
+    userout "#{fileline(rule)} : #{target} both needs and is needed by:"
+    needers.each do |r|
+      userout "  #{fileline(r)} : #{r[:target]}"
     end
-  end
-  needs.keys.each do |r|
-    if neededby.has_key? r
-      userout "#{fileline(rule)} : #{target} both needs and is needed by #{r}"
-      exit 2
-    end
+    failed = true
   end
 end
+exit(2) if failed
 
 # Sort so that least needed are first.
 order = needed.values
@@ -282,8 +272,6 @@ def compare(a, b)
   if aidx.nil?
     if bidx.nil?
       c = a[:needs].size <=> b[:needs].size
-      return c unless c == 0
-      c = a[:neededby].size <=> b[:neededby].size
       return c unless c == 0
       return a[:commands].length <=> b[:commands].length
     end

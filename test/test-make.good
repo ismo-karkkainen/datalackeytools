@@ -294,3 +294,53 @@ Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"
 Shell exit: 1
 make/shell.rules : 0 : tgt command failed: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
 ####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/circular-needs.rules a
+####CODE 2
+####OUT
+Loading: circular-needs.rules from make
+make/circular-needs.rules : 0 : a both needs and is needed by:
+  make/circular-needs.rules : 1 : b
+make/circular-needs.rules : 1 : b both needs and is needed by:
+  make/circular-needs.rules : 0 : a
+####ERR
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/circular-2-needs.rules a
+####CODE 2
+####OUT
+Loading: circular-2-needs.rules from make
+make/circular-2-needs.rules : 0 : a both needs and is needed by:
+  make/circular-2-needs.rules : 1 : b
+  make/circular-2-needs.rules : 2 : c
+  make/circular-2-needs.rules : 3 : d
+  make/circular-2-needs.rules : 4 : e
+  make/circular-2-needs.rules : 5 : f
+make/circular-2-needs.rules : 1 : b both needs and is needed by:
+  make/circular-2-needs.rules : 2 : c
+  make/circular-2-needs.rules : 3 : d
+  make/circular-2-needs.rules : 4 : e
+  make/circular-2-needs.rules : 5 : f
+  make/circular-2-needs.rules : 0 : a
+make/circular-2-needs.rules : 2 : c both needs and is needed by:
+  make/circular-2-needs.rules : 3 : d
+  make/circular-2-needs.rules : 4 : e
+  make/circular-2-needs.rules : 5 : f
+  make/circular-2-needs.rules : 0 : a
+  make/circular-2-needs.rules : 1 : b
+make/circular-2-needs.rules : 3 : d both needs and is needed by:
+  make/circular-2-needs.rules : 4 : e
+  make/circular-2-needs.rules : 5 : f
+  make/circular-2-needs.rules : 0 : a
+  make/circular-2-needs.rules : 1 : b
+  make/circular-2-needs.rules : 2 : c
+make/circular-2-needs.rules : 4 : e both needs and is needed by:
+  make/circular-2-needs.rules : 5 : f
+  make/circular-2-needs.rules : 0 : a
+  make/circular-2-needs.rules : 1 : b
+  make/circular-2-needs.rules : 2 : c
+  make/circular-2-needs.rules : 3 : d
+make/circular-2-needs.rules : 5 : f both needs and is needed by:
+  make/circular-2-needs.rules : 0 : a
+  make/circular-2-needs.rules : 1 : b
+  make/circular-2-needs.rules : 2 : c
+  make/circular-2-needs.rules : 3 : d
+  make/circular-2-needs.rules : 4 : e
+####ERR

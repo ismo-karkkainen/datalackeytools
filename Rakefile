@@ -33,6 +33,25 @@ task :testgem do
 end
 
 desc 'Test.'
-task :test => [:testgem] do
-  sh './test.sh'
+task :test => [:testgem, :testmake, :testfsm, :testmapped, :testrun] do
+end
+
+desc 'Test make.'
+task :testmake => [:testgem] do
+  sh './test.sh make'
+end
+
+desc 'Test fsm.'
+task :testfsm => [:testgem] do
+  sh './test.sh fsm'
+end
+
+desc 'Test mapped.'
+task :testmapped => [:testgem] do
+  sh './test.sh mapped'
+end
+
+desc 'Test run.'
+task :testrun => [:testgem] do
+  sh './test.sh run'
 end
