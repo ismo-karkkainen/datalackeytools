@@ -21,6 +21,7 @@ $DIRECTORY = nil
 $PERMISSIONS = nil
 $ECHO = false
 $RULEFILE = nil
+$TIME = false
 $root_dir = Dir.pwd
 
 parser = OptionParser.new do |opts|
@@ -60,6 +61,7 @@ parser = OptionParser.new do |opts|
   opts.on('-f', '--follow [LEVEL]', Integer, 'Print state/signal/command.') do |level|
     $FOLLOW = level
   end
+  opts.on('--time', 'Print state durations.') { $TIME = true }
 end
 
 DatalackeyProcess.options_for_OptionParser(parser, true,
@@ -359,7 +361,7 @@ class Handlers
     @error_mutex.synchronize { return false unless @error.nil? }
     info = []
     s_cmd = cmd.to_s
-    userout("Command: #{s_cmd}") if $FOLLOW > 1
+    userout("Command: #{s_cmd}") if $FOLLOW > 2
     begin
       if cmd.is_a? Hash
         expanded = expand(cmd, info)
@@ -380,7 +382,7 @@ class Handlers
       userout e.to_s
       return false
     end
-    if $FOLLOW > 2
+    if $FOLLOW > 3
       s_exp = expanded.to_s
       userout("Expanded: #{s_exp}") if s_cmd != s_exp
     end
@@ -410,7 +412,7 @@ class Handlers
       userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unknown command: #{name}"
       return false
     end
-    userout("Command: #{name}") if $FOLLOW == 1
+    userout("Command: #{name}") if $FOLLOW == 2
     return false unless handler[:object].handle(expanded)
     return @error_mutex.synchronize { @error.nil? }
   end
@@ -967,6 +969,7 @@ end
 
 # Perform all computations in given order.
 failed = false
+time = Time.new
 order.each do |rule|
   failed = $lackey.closed?
   userout("Rule: #{rule[:target]}") if $FOLLOW > 0
@@ -977,6 +980,11 @@ order.each do |rule|
     break
   end
   break if failed
+  if $TIME
+    t = time
+    time = Time.new
+    userout "Elapsed #{(time - t).round(2).to_s} s"
+  end
 end
 
 unless $lackey.closed?
