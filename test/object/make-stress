@@ -38,8 +38,8 @@ end
 
 args = []
 names.each do |n|
-  args.push n
   args.push "o#{n}"
+  args.push n
 end
 STDOUT.puts args.join(' ')
 

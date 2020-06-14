@@ -1,8 +1,8 @@
 #!/bin/sh
 
-F2M=$1
+F2O=$1
 shift
-I2M=$1
+O2F=$1
 shift
 
 C=0
@@ -11,20 +11,20 @@ I=
 for A in $*
 do
     cp $A a$C
-    F=$(echo $F $A a$C)
+    F=$(echo $F a$C $A)
     I=$(echo $I a$C ba$C)
     C=$(expr $C + 1)
 done
-echo | $F2M --wait $F
+$F2O $F
 RC=$?
 if [ $RC -ne 0 ]; then
-    echo "files2mapped failure."
+    echo "files2object failure."
     exit $RC
 fi
-echo | $F2M -w $F | $I2M $I
+$F2O $F | $O2F $I
 RC=$?
 if [ $RC -ne 0 ]; then
-    echo "input2mapped failure."
+    echo "object2files failure."
     rm -f a* ba*
     exit $RC
 fi

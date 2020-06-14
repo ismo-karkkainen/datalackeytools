@@ -1,0 +1,43 @@
+####COMMAND Empty unpack
+####CODE 0
+####OUT
+####ERR
+####COMMAND Straight unpack
+####CODE 0
+####OUT
+"a"
+####ERR
+####COMMAND Rename and unpack
+####CODE 0
+####OUT
+"a"
+####ERR
+####COMMAND Empty pack
+####CODE 0
+####OUT
+{}
+####ERR
+####COMMAND Pack rename
+####CODE 0
+####OUT
+{"x-a2":"a","x-b2":"a"}
+####ERR
+####COMMAND Unused names in unpack
+####CODE 0
+####OUT
+####ERR
+####COMMAND Literal packed
+####CODE 1
+####OUT
+{"x-e":"b"}
+####ERR
+####COMMAND Unpack to subdirectory
+####CODE 0
+####OUT
+"c"
+####ERR
+####COMMAND Pack from subdirectory
+####CODE 0
+####OUT
+{"x-g":"c"}
+####ERR

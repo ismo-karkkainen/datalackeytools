@@ -6,14 +6,16 @@
 require 'json'
 require 'pathname'
 
-if ARGV.length == 0 or (ARGV.length > 0 and ARGV.length % 2 != 0)
-  STDERR.puts "Usage: input2mapped key file ..."
-  STDERR.puts "  Saves each key:value pair value in input JSON object to file."
-  STDERR.puts "  Directories are created if file seems to contain them."
+if ARGV.length > 0 and ARGV.length % 2 != 0
+  STDERR.puts %q(Usage: object2files [key filename ...]
+  Saves each key:value pair value in input JSON object to file.
+  File name is either taken from arguments, or key is used as is.
+  Directories are created if filename seems to contain them.
+  Unused key/filename argument pairs are ignored.)
   exit 1
 end
 
-map = Hash[ARGV.each_slice(2).to_a]
+map = ARGV.empty? ? {} : Hash[ARGV.each_slice(2).to_a]
 
 begin
   obj = JSON.parse(STDIN.read)
@@ -22,16 +24,8 @@ rescue JSON::ParserError
   exit 2
 end
 
-failed = false
 obj.each_pair do |key, value|
-  next if map.has_key? key
-  STDERR.puts "Missing file name for key: #{key}"
-  failed = true
-end
-exit(1) if failed
-
-obj.each_pair do |key, value|
-  file = map[key]
+  file = map.fetch(key, key)
   fp = Pathname.new file
   dn = fp.dirname
   begin

@@ -1,0 +1,57 @@
+#!/usr/bin/env ruby
+
+# Copyright 2019 Ismo Kärkkäinen
+# Licensed under Universal Permissive License. See License.txt.
+
+require 'pathname'
+
+def usage
+  STDERR.puts %q(Usage: files2object [--wait|-w] [key filename ...]
+  Prints out key: file contents pairs as a JSON object.
+  File contents are not checked to be valid JSON.
+  If filename starts with :, the rest of string is taken to be a JSON value.
+  --wait/-w option as first argument will wait for a line/EOF from stdin first.
+  (This is intended for debugging the program that piped the output from this.)
+)
+  exit 1
+end
+
+wait = (ARGV.first == '--wait' or ARGV.first == '-w')
+ARGV.shift() if wait
+usage() if ARGV.length > 0 and ARGV.length % 2 != 0
+
+ARGV.each_slice(2) do |pair|
+  next if pair.last.start_with? ':'
+  fp = Pathname.new pair.last
+  unless fp.file?
+    STDERR.puts "Not a file: #{pair.last}"
+    exit 1
+  end
+end
+
+if wait
+  begin
+    STDIN.readline
+  rescue StandardError
+  end
+end
+
+separator=''
+print '{'
+ARGV.each_slice(2) do |pair|
+  print "#{separator}\"#{pair.first}\":"
+  if pair.last.start_with? ':'
+    print pair.last[1..pair.last.size]
+  else
+    fp = Pathname.new pair.last
+    offset = 0
+    while offset < fp.size
+      print fp.read(1048576, offset)
+      STDOUT.flush
+      offset += 1048576
+    end
+  end
+  separator = ','
+end
+puts '}'
+STDOUT.flush

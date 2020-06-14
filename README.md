@@ -8,7 +8,7 @@ I refer to these as controllers.
 * datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
 * datalackey-fsm is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts.
 * datalackey-run is helper tool that takes care of running datalackey and your controller program as child process of datalackey, freeing your controller to deal only with communicating with datalackey.
-* files2mapped and input2mapped are simple alternative to datalackey. files2mapped outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. input2mapped does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
+* files2object and object2files are simple alternative to datalackey. files2object outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. object2files does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
 
 As you should specify the storage options, each of these requires either
 memory or directory storage be specified. Memory storage requires that all
