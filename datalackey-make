@@ -605,7 +605,7 @@ class RunBase < Command
           @prev_bytes_id = id
         end
       end
-      out.push ''.concat(*vars)
+      out.push (vars.map { |c| c.chr }).join
     end
     userout(out) unless $QUIET
     return not(out.empty?)
