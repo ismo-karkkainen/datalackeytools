@@ -48,7 +48,7 @@ $MAKE -m --stderr --follow 4 --rules make/default.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/extend-load.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/extend.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/feed-test.rules tgt
-$MAKE -m --stderr --follow 4 --rules make/feed-test.rules tgt
+$MAKE -m --stderr --follow 4 --rules make/feed-error.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/include-delete.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/include-loop.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/include-overwrite.rules tgt

@@ -39,6 +39,7 @@ $FSM -m --stderr -f 4 fsm/launch-signal.state
 $FSM -m --stderr -f 4 fsm/launch-terminate.state
 $FSM -m --stderr -f 4 fsm/launch-wait.state
 $FSM -m --stderr -f 5 fsm/feed-test.state
+$FSM -m --stderr -f 5 fsm/feed-error.state
 $FSM -m --stderr -f 4 fsm/ruby.state
 $FSM -m --stderr -f 4 fsm/shell.state
 $FSM -m --stderr -f 4 fsm/rename-delete.state

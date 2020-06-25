@@ -702,7 +702,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { :error => [ 'feed', 'error', '*' ] } ],
+      [ { :error => [ 'error', '*' ] } ],
       [ $terminator ])
   end
 end

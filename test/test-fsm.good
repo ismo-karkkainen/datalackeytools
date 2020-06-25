@@ -123,6 +123,33 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
+####COMMAND datalackey-fsm -m --stderr -f 5 fsm/feed-error.state
+####CODE 1
+####OUT
+State: __setup
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
+Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "notify_all", "notify", "data", "notify", "process"]
+Command: ["set", "terminate_delay", 5]
+State: feed-test
+Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
+["initial", "run", "end-feed", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test", "label_and_value"]
+Command: ["launch", "fed", "pipes", "program", "feed-test"]
+Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test"]
+Command: ["wait_data", "label_and_value"]
+Command: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
+["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
+1 error unknown 1 feed fed input label_and_value renamed not-input
+Signal: error
+State: __terminate_all
+Command: ["close"]
+["end-feed", "fed"]
+Command: ["wait_process", "terminate_delay"]
+Expanded: ["wait_process", 5]
+Command: ["terminate"]
+####ERR
 ####COMMAND datalackey-fsm -m --stderr -f 4 fsm/ruby.state
 ####CODE 0
 ####OUT

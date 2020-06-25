@@ -132,10 +132,10 @@ label_and_value : 1
 1 : 2
 2 : 3
 ####ERR
-####COMMAND datalackey-make -m --stderr --follow 4 --rules make/feed-test.rules tgt
-####CODE 0
+####COMMAND datalackey-make -m --stderr --follow 4 --rules make/feed-error.rules tgt
+####CODE 1
 ####OUT
-Loading: feed-test.rules from make
+Loading: feed-error.rules from make
 Rule: tgt
 Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
@@ -143,14 +143,8 @@ Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "
 Command: ["launch", "fed", "pipes", "program", "feed-test"]
 Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
 Command: ["wait_data", "label_and_value"]
-Command: ["feed", "fed", "input", "label_and_value", "renamed"]
-Command: ["feed", "fed", "direct", "123", "direct_value"]
-Command: ["close", "fed"]
-Command: ["wait_data", "1", "2"]
-Command: ["serial", "label_and_value", "1", "2"]
-label_and_value : 1
-1 : 2
-2 : 3
+Command: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
+make/feed-error.rules : 0 : tgt command failed: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/include-delete.rules tgt
 ####CODE 0
