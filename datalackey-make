@@ -117,7 +117,6 @@ def load_rulefile(filename, current_directory, parent_includes = [])
     contents = YAML.load(File.read(fullname))
     directory = File.dirname(fullname)
   rescue Errno::ENOENT => e
-    userout e.to_s
     userout "Could not find #{filename} from #{current_directory}"
     return nil
   rescue StandardError => e
@@ -630,26 +629,6 @@ end
 class RunCommand < RunBase
   def initialize
     super('run')
-    @action = PatternAction.new([ @@actions_run_common ],
-      [ @msgmaker, $terminator ])
-  end
-
-  def handle(cmd)
-    cmd.flatten!
-    unless cmd.include? 'end-feed'
-      c = cmd[0...2]
-      c.push 'end-feed'
-      c.concat cmd[2...cmd.length]
-      cmd = c
-    end
-    super(cmd)
-  end
-end
-RunCommand.new
-
-class LaunchCommand < RunBase
-  def initialize
-    super('launch')
     @action = PatternAction.new([
       { :return => [ 'run', 'running', '?' ],
         :error => [ 'run', 'terminated', '?' ]},
@@ -658,11 +637,10 @@ class LaunchCommand < RunBase
 
   def handle(cmd)
     cmd.flatten!
-    cmd[0] = 'run'
     super(cmd)
   end
 end
-LaunchCommand.new
+RunCommand.new
 
 class ProcessCommand < Command
   def initialize(name)
@@ -974,6 +952,7 @@ order.each do |rule|
   failed = $lackey.closed?
   userout("Rule: #{rule[:target]}") if $FOLLOW > 0
   rule[:commands].each do |cmd|
+    userout $lackey_stderr.getlines
     next if $handlers.run(cmd, rule)
     userout "#{fileline(rule)} : #{rule[:target]} command failed: #{cmd}"
     failed = true

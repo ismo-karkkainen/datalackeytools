@@ -6,7 +6,8 @@ that just stores your data, and other progrems are meant to control it.
 I refer to these as controllers.
 
 * datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
-* datalackey-fsm is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts.
+* datalackey-state is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts. State transitions allow the use of loops.
+* datalackey-make is intended for performing a task after all dependencies have been fulfilled.
 * datalackey-run is helper tool that takes care of running datalackey and your controller program as child process of datalackey, freeing your controller to deal only with communicating with datalackey.
 * files2object and object2files are simple alternative to datalackey. files2object outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. object2files does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
 
@@ -20,14 +21,14 @@ down and return later and still have what you were working on remain as it was.
 The datalackey-shell is intended to allow you to issue commands to datalackey
 interactively, rather than typing JSON-encoded arrays. That is basically all
 it does. If you need to write scripts that would issue commands and wait for
-outcomes, see datalackey-fsm. Consequently there are no control statements
+outcomes, see datalackey-state. Consequently there are no control statements
 such as loops or conditional statements.
 
 One benefit of the shell is that by setting echoing of input to datalackey and
 datalackey output to controller, you can see how communication with datalackey
 proceeds, which is no doubt helpful when you need to write your own controller.
 
-# FSM
+# State
 
 Started life as a finite state machine to allow one to implement algorithms
 easily. You have states that are command lists. Signals trigger state
@@ -76,14 +77,14 @@ commands or do anything the current commands do not cover. Since program
 reads multiple files, you can separate your command-adding states for re-use
 into their own files. 
 
-See test/fsm and examples directories for how to use ruby/script and how to
+See test/state and examples directories for how to use ruby/script and how to
 use re-usable states, should you need them.
 
 # Make
 
 Given needed targets, finds their dependencies and runs commands in required
 order. Targets are not files nor data labels. Otherwise resembles make.
-Commands are mainly the same as in datalackey-fsm.
+Commands are mainly the same as in datalackey-state.
 
 # Run
 
@@ -103,7 +104,7 @@ methods are also present.
 
 You can use the DatalackeyProcess to actually run datalackey if you want,
 or if you run the controller under datalackey, then DatalackeyParentProcess.
-See datalackey-fsm for an example of both.
+See datalackey-state for an example of both.
 
 DatalackeyIO handles reading datalackey process and sending it your commands
 and data. Each command is paired with PatternAction. That is a mapping from
@@ -121,18 +122,18 @@ You need to build, test and install the gem before other tests. In short:
     rake test
     sudo rake install
 
-To run a sub-set of tests run test.sh with argument fsm, make, mapped, or run.
+To run a sub-set of tests run test.sh with argument state, make, mapped, or run.
 THey correspond to scripts in test directory.
 
 To run an individual test, the tests print exit code and the command, so you
 can copy the command and prefix "./" to program name and "test/" to the file
 name argument. For example, the output line:
 
-    0 datalackey-fsm -m --stderr -f 4 fsm/launch-terminate.state
+    0 datalackey-state -m --stderr -f 4 state/launch-terminate.state
 
 Corresponds to command:
 
-    ./datalackey-fsm -m --stderr -f 4 test/fsm/launch-terminate.state
+    ./datalackey-state -m --stderr -f 4 test/state/launch-terminate.state
 
 # License
 

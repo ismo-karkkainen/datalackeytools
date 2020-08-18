@@ -1,5 +1,4 @@
 ---
-- tgt:
-  commands:
+- launch-signal:
   - [ run, failing, program, sh, "-c", "sleep 1; exit 2" ]
-  - print not visible
+  - wait_signal

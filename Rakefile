@@ -6,7 +6,7 @@ task :install => [:installgem] do
   target = File.join(prefix, 'bin')
   puts "Using PREFIX #{prefix} to install to #{target}."
   abort("Target #{target} is not a directory.") unless File.directory? target
-  [ 'datalackey-fsm', 'datalackey-make', 'datalackey-run', 'datalackey-shell', 'files2object', 'object2files' ].each do |exe|
+  [ 'datalackey-state', 'datalackey-make', 'datalackey-run', 'datalackey-shell', 'files2object', 'object2files' ].each do |exe|
     puts "Installing #{exe}."
     %x(sudo install #{exe} #{prefix}/bin/)
   end
@@ -33,7 +33,7 @@ task :testgem do
 end
 
 desc 'Test.'
-task :test => [:testgem, :testmake, :testfsm, :testrun, :testio] do
+task :test => [:testgem, :testmake, :teststate, :testrun, :testio] do
 end
 
 desc 'Test make.'
@@ -41,9 +41,9 @@ task :testmake => [:testgem] do
   sh './test.sh make'
 end
 
-desc 'Test fsm.'
-task :testfsm => [:testgem] do
-  sh './test.sh fsm'
+desc 'Test state.'
+task :teststate => [:testgem] do
+  sh './test.sh state'
 end
 
 desc 'Test run.'

@@ -6,9 +6,8 @@ No targets.
 ####COMMAND datalackey-make -m --stderr --follow 4 tgt
 ####CODE 2
 ####OUT
-Loading: Rulefile from /Users/iak/Projects/datatools/datalackeyshell/test
-No such file or directory @ realpath_rec - Rulefile
-Could not find Rulefile from /Users/iak/Projects/datatools/datalackeyshell/test
+Loading: Rulefile from 
+Could not find Rulefile from 
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/empty.rules tgt
 ####CODE 2
@@ -120,8 +119,9 @@ Rule: tgt
 Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
 Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
-Command: ["launch", "fed", "pipes", "program", "feed-test"]
-Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+Command: ["run", "fed", "pipes", "program", "feed-test"]
+Expanded: ["run", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+Command: ["close", "initial"]
 Command: ["wait_data", "label_and_value"]
 Command: ["feed", "fed", "input", "label_and_value", "renamed"]
 Command: ["feed", "fed", "direct", "123", "direct_value"]
@@ -140,8 +140,8 @@ Rule: tgt
 Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
 Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
-Command: ["launch", "fed", "pipes", "program", "feed-test"]
-Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
+Command: ["run", "fed", "pipes", "program", "feed-test"]
+Expanded: ["run", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
 Command: ["wait_data", "label_and_value"]
 Command: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
 make/feed-error.rules : 0 : tgt command failed: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
@@ -153,8 +153,8 @@ Loading: include-delete.rules from make
 Loading: included-rename.rules from make
 Rule: first
 Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
-Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["run", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["run", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
 Command: ["wait_data", "label"]
 Rule: rename-test
 Command: ["rename", "label", "new_name"]
@@ -192,14 +192,14 @@ Command: ["set", "overwriter", "overwriter-value-set"]
 ####OUT
 Loading: launch-terminate.rules from make
 Rule: tgt
-Command: ["launch", "sleeper", "program", "sleep", "10"]
+Command: ["run", "sleeper", "program", "sleep", "10"]
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/launch-wait.rules tgt
 ####CODE 0
 ####OUT
 Loading: launch-wait.rules from make
 Rule: tgt
-Command: ["launch", "sleeper", "program", "sleep", "3"]
+Command: ["run", "sleeper", "program", "sleep", "3"]
 Command: ["wait_process", "4", "sleeper"]
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/rename-delete.rules tgt
@@ -208,8 +208,8 @@ Command: ["wait_process", "4", "sleeper"]
 Loading: rename-delete.rules from make
 Rule: tgt
 Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
-Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["run", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["run", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
 Command: ["wait_data", "label"]
 Command: ["rename", "label", "new_name"]
 Command: ["wait_data", "new_name"]
@@ -232,14 +232,6 @@ Command: ["set", "twovar", "value2"]
 Command: {"ruby"=>"lines = []\n$handlers.variables.keys.sort.each do |key|\n  next unless key == 'onevar' or key == 'twovar'\n  lines.push \"\#{key} => \#{$handlers.variables[key].to_s}\"\nend\nuserout lines\n"}
 onevar => value1
 twovar => value2
-####ERR
-####COMMAND datalackey-make -m --stderr --follow 4 --rules make/run-error.rules tgt
-####CODE 1
-####OUT
-Loading: run-error.rules from make
-Rule: tgt
-Command: ["run", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
-make/run-error.rules : 0 : tgt command failed: ["run", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
 ####ERR
 ####COMMAND datalackey-make -m --stderr --follow 4 --rules make/run-exit.rules tgt
 ####CODE 0

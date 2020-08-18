@@ -1,4 +1,4 @@
 ---
 - launch-test:
-  - launch sleeper program sleep 10
+  - run sleeper program sleep 10
   - set terminate_delay 2

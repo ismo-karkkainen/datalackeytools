@@ -3,7 +3,6 @@
 ####OUT
 files2object failure.
 ####ERR
-cp: missing: No such file or directory
 Not a file: missing
 ####COMMAND run.sh files2object object2files tf1.json
 ####CODE 0
@@ -43,7 +42,6 @@ Error parsing input.
 ####OUT
 files2object failure.
 ####ERR
-cp: missing: No such file or directory
 Not a file: missing
 ####COMMAND wait.sh files2object object2files tfstr.json
 ####CODE 0

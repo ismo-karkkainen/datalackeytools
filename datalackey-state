@@ -13,7 +13,7 @@ $USEROUT = STDERR
 $OVERWRITE_ACTION = nil
 $FOLLOW = 0
 $QUIET = false
-# For case when we run datalackey.
+# For the case when we run datalackey.
 $LACKEY = nil
 $MEMORY = nil
 $DIRECTORY = nil
@@ -25,7 +25,7 @@ $root_dir = Dir.pwd
 parser = OptionParser.new do |opts|
   opts.summary_indent = '  '
   opts.summary_width = 26
-  opts.banner = "Usage: datalackey-fsm [options] state-files..."
+  opts.banner = "Usage: datalackey-state [options] state-files..."
   opts.separator ""
   opts.separator "Options:"
   opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
@@ -447,9 +447,7 @@ PopCommand.new
 class RunBase < Command
   @@actions_run_common = {
     :error => {
-      :args_missing => [ "run", "error", "missing", "*" ],
-      :syntax => [ [ "run", "error", "?", "argument", "unknown" ],
-        [ "run", "error", "?", "duplicate", "?" ] ],
+      :syntax => [ "run", "error", "?", "argument", "unknown" ],
       :command_error => [ "run", "error", "*" ],
       :run_internal => [ [ "run", "error", "exception" ],
         [ "run", "error", "no-memory" ],
@@ -519,26 +517,6 @@ end
 class RunCommand < RunBase
   def initialize
     super('run')
-    @action = PatternAction.new([ @@actions_run_common ],
-      [ @msgmaker, $signal_sender ])
-  end
-
-  def handle(cmd)
-    cmd.flatten!
-    unless cmd.include? 'end-feed'
-      c = cmd[0...2]
-      c.push 'end-feed'
-      c.concat cmd[2...cmd.length]
-      cmd = c
-    end
-    super(cmd)
-  end
-end
-RunCommand.new
-
-class LaunchCommand < RunBase
-  def initialize
-    super('launch')
     @action = PatternAction.new([
       { :return => [ 'run', 'running', '?' ],
         :error => [ 'run', 'terminated', '?' ]},
@@ -547,11 +525,10 @@ class LaunchCommand < RunBase
 
   def handle(cmd)
     cmd.flatten!
-    cmd[0] = 'run'
     super(cmd)
   end
 end
-LaunchCommand.new
+RunCommand.new
 
 class ProcessCommand < Command
   def initialize(name)
@@ -784,7 +761,7 @@ class ShellCommand < Command
       return
     end
     # Write script into a temporary file.
-    temp = Tempfile.new('fsm', Dir.tmpdir)
+    temp = Tempfile.new('state', Dir.tmpdir)
     begin
       temp.puts "#!#{interpreter} #{hashbangargs}"
       temp.puts script
@@ -865,8 +842,8 @@ $built_ins = { '__setup' => %q(
   - terminate
   comment: "Default termination, close feeds, terminate all after 5 seconds."
 - __setup:
-  - set pipes in JSON stdin out JSON stdout
-  - set pipes_stderr in JSON stdin out JSON stdout out bytes stderr
+  - set pipes in JSON stdin out JSON stdout out bytes stderr
+  - set pipes_noerr in JSON stdin out JSON stdout
   - set notify_all notify data notify process
   - [ set, terminate_delay, 5 ]
   global_signal2state:
@@ -890,7 +867,6 @@ def load_statefile(filename, current_directory, parent_includes = [])
       contents = YAML.load(File.read(fullname))
       directory = File.dirname(fullname)
     rescue Errno::ENOENT => e
-      userout e.to_s
       userout "Could not find #{filename} from #{current_directory}"
       return nil
     rescue StandardError => e

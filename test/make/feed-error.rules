@@ -3,6 +3,6 @@
   commands:
   - set pipes in JSON stdin out JSON stdout
   - run initial pipes program feed-test label_and_value
-  - launch fed pipes program feed-test
+  - run fed pipes program feed-test
   - wait_data label_and_value
   - feed fed input label_and_value renamed not-input supposed-label

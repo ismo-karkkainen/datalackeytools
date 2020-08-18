@@ -1,5 +1,5 @@
 ---
 - launch-test:
-  - launch sleeper program sleep 3
+  - run sleeper program sleep 3
   - set terminate_delay 1
   - wait_process 4 sleeper

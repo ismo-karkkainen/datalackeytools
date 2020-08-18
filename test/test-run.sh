@@ -1,19 +1,19 @@
 #!/bin/sh
 
-FSM=
-D="datalackey-fsm"
+STATE=
+D="datalackey-state"
 for C in $1 $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D
 do
     if [ -x $C ]; then
-        FSM=$C
+        STATE=$C
         break
     fi
 done
-if [ -z "$FSM" ]; then
-    echo "datalackey-fsm not found, pass it as first parameter."
+if [ -z "$STATE" ]; then
+    echo "datalackey-state not found, pass it as first parameter."
     exit 1
 fi
-if [ "$1" = "$FSM" ]; then
+if [ "$1" = "$STATE" ]; then
     shift
 fi
 
@@ -51,31 +51,31 @@ if [ $# -gt 0 ]; then
     done
 else
     cat > $CMDS << EOF
-$RUN -m $FSM --stdout -f 4 fsm/set-print.state
-$RUN -m $FSM --stdout -f 4 fsm/run-exit.state
-$RUN -m $FSM --stdout -f 4 fsm/launch-signal.state
-$RUN -m $FSM --stdout -f 4 fsm/launch-terminate.state
-$RUN -m $FSM --stdout -f 4 fsm/launch-wait.state
-$RUN -m $FSM --stdout -f 5 fsm/feed-test.state
-$RUN -m $FSM --stdout -f 4 fsm/ruby.state
-$RUN -m $FSM --stdout -f 4 fsm/shell.state
-$RUN -m $FSM --stdout -f 4 fsm/rename-delete.state
-$RUN -m $FSM --stdout -f 4 fsm/assert_var.state
-$RUN -m $FSM --stdout -f 4 fsm/default.state
-$RUN -m $FSM --stdout -f 4 fsm/include-delete.state
-$RUN -m $FSM --stdout -f 4 fsm/include-loop.state
-$RUN -m $FSM --stdout -f 4 --warn fsm/include-overwrite.state
-$RUN -m $FSM --stdout -f 4 --error fsm/include-overwrite.state
-$RUN -m $FSM --stdout -f 4 fsm/file-not-found
-$RUN -m $FSM --stdout -f 4 fsm/bad-file
-$RUN -m $FSM --stdout -f 4 fsm/first-multi.state
-$RUN -m $FSM --stdout -f 4 fsm/include-ignore.state
-$RUN -m $FSM --stdout -f 4 fsm/multi.state
-$RUN -m $FSM --stdout -f 4 fsm/extend.state
-$RUN -m $FSM --stdout -f 4 fsm/extend-load.state
-$RUN -m $FSM --stdout -f 4 fsm/jump.state
-$RUN -m $FSM --stdout -f 4 fsm/stack-jump.state
-$RUN -m $FSM --stdout -f 4 fsm/label2signal.state
+$RUN -m $STATE --stdout -f 4 state/set-print.state
+$RUN -m $STATE --stdout -f 4 state/run-exit.state
+$RUN -m $STATE --stdout -f 4 state/launch-signal.state
+$RUN -m $STATE --stdout -f 4 state/launch-terminate.state
+$RUN -m $STATE --stdout -f 4 state/launch-wait.state
+$RUN -m $STATE --stdout -f 5 state/feed-test.state
+$RUN -m $STATE --stdout -f 4 state/ruby.state
+$RUN -m $STATE --stdout -f 4 state/shell.state
+$RUN -m $STATE --stdout -f 4 state/rename-delete.state
+$RUN -m $STATE --stdout -f 4 state/assert_var.state
+$RUN -m $STATE --stdout -f 4 state/default.state
+$RUN -m $STATE --stdout -f 4 state/include-delete.state
+$RUN -m $STATE --stdout -f 4 state/include-loop.state
+$RUN -m $STATE --stdout -f 4 --warn state/include-overwrite.state
+$RUN -m $STATE --stdout -f 4 --error state/include-overwrite.state
+$RUN -m $STATE --stdout -f 4 state/file-not-found
+$RUN -m $STATE --stdout -f 4 state/bad-file
+$RUN -m $STATE --stdout -f 4 state/first-multi.state
+$RUN -m $STATE --stdout -f 4 state/include-ignore.state
+$RUN -m $STATE --stdout -f 4 state/multi.state
+$RUN -m $STATE --stdout -f 4 state/extend.state
+$RUN -m $STATE --stdout -f 4 state/extend-load.state
+$RUN -m $STATE --stdout -f 4 state/jump.state
+$RUN -m $STATE --stdout -f 4 state/stack-jump.state
+$RUN -m $STATE --stdout -f 4 state/label2signal.state
 EOF
 fi
 
@@ -91,7 +91,7 @@ do
         if [ -z "$B" ]; then
             # Program full name substituted with basename.
             B=$(basename $P)
-        elif [ "$P" = "$FSM" ]; then
+        elif [ "$P" = "$STATE" ]; then
             B="$B $(basename $P)"
         else
             B="$B $P"
@@ -103,9 +103,9 @@ do
     echo "$R $B"
     echo "####CODE $R" >> $RESULTS
     echo "####OUT" >> $RESULTS
-    cat $$.out | sed "s#$(pwd)/##g" >> $RESULTS
+    cat $$.out | sed "s#$(pwd)/##g" | sed "s#$(pwd)##g" >> $RESULTS
     echo "####ERR" >> $RESULTS
-    cat $$.err | sed "s#$(pwd)/##g" >> $RESULTS
+    cat $$.err | sed "s#$(pwd)/##g" | sed "s#$(pwd)##g" >> $RESULTS
     rm -f $$.out $$.err
 done
 

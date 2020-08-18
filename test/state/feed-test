@@ -6,7 +6,10 @@ out = { }
 ARGV.each do |arg|
   out[arg] = arg
 end
-STDOUT.puts(JSON.generate(out)) unless out.empty?
+unless out.empty?
+  STDOUT.puts(JSON.generate(out))
+  STDOUT.flush
+end
 
 out = { }
 count = 0

@@ -2,7 +2,7 @@
 - tgt:
   commands:
   - set pipes in JSON stdin out JSON stdout
-  - [ launch, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
+  - [ run, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
   - wait_data label
   - rename label new_name
   - wait_data new_name

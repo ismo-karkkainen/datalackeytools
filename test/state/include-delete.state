@@ -1,6 +1,6 @@
 ---
 - startup:
-  - [ launch, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
+  - [ run, producer, pipes, program, sh, "-c", "echo '{\"label\":123}'" ]
   - wait_data label
   signal2state:
     null: rename-test

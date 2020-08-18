@@ -10,7 +10,9 @@ F=
 I=
 for A in $*
 do
-    cp $A a$C
+    if [ -f $A ]; then
+        cp $A a$C
+    fi
     F=$(echo $F a$C $A)
     I=$(echo $I a$C ba$C)
     C=$(expr $C + 1)

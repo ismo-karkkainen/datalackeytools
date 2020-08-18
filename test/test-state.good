@@ -1,9 +1,9 @@
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/set-print.state
+####COMMAND datalackey-state -m --stderr -f 4 state/set-print.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: set-test-setup
@@ -20,12 +20,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/run-exit.state
+####COMMAND datalackey-state -m --stderr -f 4 state/run-exit.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: run-test
@@ -36,16 +36,16 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/launch-signal.state
+####COMMAND datalackey-state -m --stderr -f 4 state/launch-signal.state
 ####CODE 1
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: launch-signal
-Command: ["launch", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
+Command: ["run", "failing", "program", "sh", "-c", "sleep 1; exit 2"]
 Command: ["wait_signal"]
 failing run exit 2
 Signal: error
@@ -55,16 +55,16 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/launch-terminate.state
+####COMMAND datalackey-state -m --stderr -f 4 state/launch-terminate.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: launch-test
-Command: ["launch", "sleeper", "program", "sleep", "10"]
+Command: ["run", "sleeper", "program", "sleep", "10"]
 Command: ["set", "terminate_delay", "2"]
 State: __terminate_all
 Command: ["close"]
@@ -72,16 +72,16 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", "2"]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/launch-wait.state
+####COMMAND datalackey-state -m --stderr -f 4 state/launch-wait.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: launch-test
-Command: ["launch", "sleeper", "program", "sleep", "3"]
+Command: ["run", "sleeper", "program", "sleep", "3"]
 Command: ["set", "terminate_delay", "1"]
 Command: ["wait_process", "4", "sleeper"]
 State: __terminate_all
@@ -90,21 +90,23 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", "1"]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 5 fsm/feed-test.state
+####COMMAND datalackey-state -m --stderr -f 5 state/feed-test.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: feed-test
 Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
-Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
-["initial", "run", "end-feed", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test", "label_and_value"]
-Command: ["launch", "fed", "pipes", "program", "feed-test"]
-Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
-["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "feed-test", "label_and_value"]
+["initial", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr", "program", "state/feed-test", "label_and_value"]
+Command: ["run", "fed", "pipes", "program", "feed-test"]
+Expanded: ["run", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "feed-test"]
+["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr", "program", "state/feed-test"]
+Command: ["close", "initial"]
+["end-feed", "initial"]
 Command: ["wait_data", "label_and_value"]
 Command: ["feed", "fed", "input", "label_and_value", "renamed"]
 ["feed", "fed", "input", "label_and_value", "renamed"]
@@ -123,39 +125,41 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 5 fsm/feed-error.state
+####COMMAND datalackey-state -m --stderr -f 5 state/feed-error.state
 ####CODE 1
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: feed-test
 Command: ["run", "initial", "pipes", "program", "feed-test", "label_and_value"]
-Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test", "label_and_value"]
-["initial", "run", "end-feed", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test", "label_and_value"]
-Command: ["launch", "fed", "pipes", "program", "feed-test"]
-Expanded: ["launch", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "feed-test"]
-["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "program", "fsm/feed-test"]
+Expanded: ["run", "initial", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "feed-test", "label_and_value"]
+["initial", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr", "program", "state/feed-test", "label_and_value"]
+Command: ["run", "fed", "pipes", "program", "feed-test"]
+Expanded: ["run", "fed", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "feed-test"]
+["fed", "run", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr", "program", "state/feed-test"]
+Command: ["close", "initial"]
+["end-feed", "initial"]
 Command: ["wait_data", "label_and_value"]
 Command: ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
 ["feed", "fed", "input", "label_and_value", "renamed", "not-input", "supposed-label"]
-1 error unknown 1 feed fed input label_and_value renamed not-input
+2 error unknown 2 feed fed input label_and_value renamed not-input
 Signal: error
 State: __terminate_all
 Command: ["close"]
-["end-feed", "fed"]
+["end-feed", "initial", "fed"]
 Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/ruby.state
+####COMMAND datalackey-state -m --stderr -f 4 state/ruby.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: ruby-test
@@ -170,12 +174,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/shell.state
+####COMMAND datalackey-state -m --stderr -f 4 state/shell.state
 ####CODE 1
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: shell-test
@@ -206,17 +210,17 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/rename-delete.state
+####COMMAND datalackey-state -m --stderr -f 4 state/rename-delete.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: rename-delete-test
-Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
-Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["run", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["run", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "sh", "-c", "echo '{\"label\":123}'"]
 Command: ["wait_data", "label"]
 Command: ["rename", "label", "new_name"]
 Command: ["wait_data", "new_name"]
@@ -234,12 +238,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/assert_var.state
+####COMMAND datalackey-state -m --stderr -f 4 state/assert_var.state
 ####CODE 1
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: test
@@ -252,12 +256,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/default.state
+####COMMAND datalackey-state -m --stderr -f 4 state/default.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: test
@@ -272,17 +276,17 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/include-delete.state
+####COMMAND datalackey-state -m --stderr -f 4 state/include-delete.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: startup
-Command: ["launch", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
-Expanded: ["launch", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout"], "program", "sh", "-c", "echo '{\"label\":123}'"]
+Command: ["run", "producer", "pipes", "program", "sh", "-c", "echo '{\"label\":123}'"]
+Expanded: ["run", "producer", ["in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"], "program", "sh", "-c", "echo '{\"label\":123}'"]
 Command: ["wait_data", "label"]
 State: rename-test
 Command: ["rename", "label", "new_name"]
@@ -302,19 +306,19 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/include-loop.state
+####COMMAND datalackey-state -m --stderr -f 4 state/include-loop.state
 ####CODE 2
 ####OUT
-Include loop: include-loop.state from fsm
- .. fsm/include-loop.state : 0
+Include loop: include-loop.state from state
+ .. state/include-loop.state : 0
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 --warn fsm/include-overwrite.state
+####COMMAND datalackey-state -m --stderr -f 4 --warn state/include-overwrite.state
 ####CODE 0
 ####OUT
-startup replaced by fsm/included-overwriter.state : 0
+startup replaced by state/included-overwriter.state : 0
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: startup
@@ -326,33 +330,32 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 --error fsm/include-overwrite.state
+####COMMAND datalackey-state -m --stderr -f 4 --error state/include-overwrite.state
 ####CODE 4
 ####OUT
-startup replaced by fsm/included-overwriter.state : 0
+startup replaced by state/included-overwriter.state : 0
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/file-not-found
+####COMMAND datalackey-state -m --stderr -f 4 state/file-not-found
 ####CODE 2
 ####OUT
-No such file or directory @ realpath_rec - fsm/file-not-found
-Could not find fsm/file-not-found from /Users/iak/Projects/datatools/datalackeyshell/test
+Could not find state/file-not-found from 
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/bad-file
+####COMMAND datalackey-state -m --stderr -f 4 state/bad-file
 ####CODE 2
 ####OUT
-Not a top level array: fsm/bad-file from /Users/iak/Projects/datatools/datalackeyshell/test
+Not a top level array: state/bad-file from 
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/first-multi.state
+####COMMAND datalackey-state -m --stderr -f 4 state/first-multi.state
 ####CODE 2
 ####OUT
-First state mapping with multiple states is ambiguous: fsm/first-multi.state : 0
+First state mapping with multiple states is ambiguous: state/first-multi.state : 0
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/include-ignore.state
+####COMMAND datalackey-state -m --stderr -f 4 state/include-ignore.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: startup
@@ -369,12 +372,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/multi.state
+####COMMAND datalackey-state -m --stderr -f 4 state/multi.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: state1
@@ -398,12 +401,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/extend.state
+####COMMAND datalackey-state -m --stderr -f 4 state/extend.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: initial
@@ -420,12 +423,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/extend-load.state
+####COMMAND datalackey-state -m --stderr -f 4 state/extend-load.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: initial
@@ -442,12 +445,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/jump.state
+####COMMAND datalackey-state -m --stderr -f 4 state/jump.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: setup
@@ -464,12 +467,12 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/stack-jump.state
+####COMMAND datalackey-state -m --stderr -f 4 state/stack-jump.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: setup
@@ -512,16 +515,16 @@ Command: ["wait_process", "terminate_delay"]
 Expanded: ["wait_process", 5]
 Command: ["terminate"]
 ####ERR
-####COMMAND datalackey-fsm -m --stderr -f 4 fsm/label2signal.state
+####COMMAND datalackey-state -m --stderr -f 4 state/label2signal.state
 ####CODE 0
 ####OUT
 State: __setup
-Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout"]
-Command: ["set", "pipes_stderr", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes", "in", "JSON", "stdin", "out", "JSON", "stdout", "out", "bytes", "stderr"]
+Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: label-signal
-Command: ["launch", "producer", "out", "JSON", "stdout", "program", "echo", "{\"out\":1}"]
+Command: ["run", "producer", "out", "JSON", "stdout", "program", "echo", "{\"out\":1}"]
 Command: ["print", "Waiting."]
 Waiting.
 Command: ["wait_signal"]

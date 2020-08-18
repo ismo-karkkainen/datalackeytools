@@ -777,7 +777,7 @@ class RecallHandler < Handler
   def initialize
     @syntax = {
       :root => [ 'recall', :history_process_id ],
-      :help => { :root => "Fetch last \"run identifier\" related settings from history. Finds the input, output, env, arg, channel, and notify settings that were in effect when last run with given identifier was done. If no identifier is given, last run command identifier is used. Prints the lines found from history." }
+      :help => { :root => "Fetch last \"run identifier\" related settings from history. Finds the output, env, arg, channel, and notify settings that were in effect when last run with given identifier was done. If no identifier is given, last run command identifier is used. Prints the lines found from history." }
     }
     register
   end
@@ -803,7 +803,7 @@ class RecallHandler < Handler
 
   def handle(parts)
     id_given = parts.length == 2
-    es = [ '^input[+]?[[:blank:]]+', '^output[+]?[[:blank:]]+',
+    es = [ '^output[+]?[[:blank:]]+',
       '^arg[+]?[[:blank:]]+', '^env[+]?[[:blank:]]+', '^env-clear$',
       '^channel[[:blank:]]+', "^#{$exit_handler.command_name}",
       '^notify[[:blank:]]+' ]
@@ -828,7 +828,6 @@ class RecallHandler < Handler
     print_until_first(session,
       [ '^env[[:blank:]]', '^env[+][[:blank:]]', '^env-clear$' ])
     print_until_first(session, [ '^arg[[:blank:]]', '^arg[+][[:blank:]]' ])
-    print_until_first(session, [ '^input[[:blank:]]', '^input[+][[:blank:]]' ])
     print_until_first(session, [ '^output[[:blank:]]', '^output[+][[:blank:]]', '^output-naming[[:blank:]]' ])
   end
 end
@@ -1193,9 +1192,9 @@ class RunHandler < Handler
 
   def initialize
     @syntax = {
-      :root => [ 3, 'run', :identifier, :executable, 'close', '&' ],
+      :root => [ 3, 'run', :identifier, :executable, '&' ],
       :identifier => [ -1, :null, :int, :string ],
-      :help => { :root => "Runs executable as identifier. If close is given, the input is closed after current input has been passed on. Uses current input, output, channel, env, and arg settings." }
+      :help => { :root => "Runs executable as identifier. Uses current input, output, channel, env, and arg settings." }
     }
     run_common = Proc.new do |category, action, message, vars|
       m = nil
@@ -1255,7 +1254,6 @@ class RunHandler < Handler
 
   def handle(parts)
     command = [ parts[1], 'run' ]
-    command.push('end-feed') if parts[3] == 'close' or parts[3] != '&'
     command.concat $notify_handler.command_part
     command.concat $input_handler.command_part
     command.concat $output_handler.command_part

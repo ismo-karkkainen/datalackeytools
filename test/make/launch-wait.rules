@@ -1,5 +1,5 @@
 ---
 - tgt:
   commands:
-  - launch sleeper program sleep 3
+  - run sleeper program sleep 3
   - wait_process 4 sleeper

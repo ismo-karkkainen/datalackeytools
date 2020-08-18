@@ -56,7 +56,6 @@ $MAKE -m --stderr --follow 4 --terminate_delay 2 --rules make/launch-terminate.r
 $MAKE -m --stderr --follow 4 --rules make/launch-wait.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/rename-delete.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/ruby.rules tgt
-$MAKE -m --stderr --follow 4 --rules make/run-error.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/run-exit.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/set-print.rules tgt
 $MAKE -m --stderr --follow 4 --rules make/shell.rules tgt
@@ -86,9 +85,9 @@ do
     echo "$R $B"
     echo "####CODE $R" >> $RESULTS
     echo "####OUT" >> $RESULTS
-    cat $$.out | sed "s#$(pwd)/##g" >> $RESULTS
+    cat $$.out | sed "s#$(pwd)/##g" | sed "s#$(pwd)##g" >> $RESULTS
     echo "####ERR" >> $RESULTS
-    cat $$.err | sed "s#$(pwd)/##g" >> $RESULTS
+    cat $$.err | sed "s#$(pwd)/##g" | sed "s#$(pwd)##g" >> $RESULTS
     rm -f $$.out $$.err
 done
 

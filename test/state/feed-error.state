@@ -1,6 +1,7 @@
 ---
 - feed-test:
   - run initial pipes program feed-test label_and_value
-  - launch fed pipes program feed-test
+  - run fed pipes program feed-test
+  - close initial
   - wait_data label_and_value
   - feed fed input label_and_value renamed not-input supposed-label
