@@ -19,7 +19,8 @@
       To use this, set abovementioned variables and: jump iterative2
   - comment No exit state set so run finishes.
 - _i2_first-stage:
-  - run stage1 pipes_stderr stage1-params end-feed program stage1-exe-args
+  - run stage1 pipes_stderr stage1-params program stage1-exe-args
+  - close stage1
   - wait_data stage1-output
   label2signal:
     exit: finished
@@ -27,7 +28,8 @@
     null: _i2_second-stage
     finished: _i2_end-state
 - _i2_second-stage:
-  - run stage2 pipes_stderr stage2-params end-feed program stage2-exe-args
+  - run stage2 pipes_stderr stage2-params program stage2-exe-args
+  - close stage2
   - wait_data stage2-output
   label2signal:
     exit: finished
