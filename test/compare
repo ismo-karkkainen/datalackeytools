@@ -11,34 +11,35 @@ def load_results(filename)
   result = Hash.new
   block = []
   f.readlines.each do |line|
-    if line.start_with? '####'
-      if line.start_with? '####COMMAND'
-        if result.has_key? :command
-          all[result[:command]] = result
-          result = Hash.new
-        end
-        result[:command] = line.split(' ', 2).last
-      elsif line.start_with? '####CODE'
-        begin
-          result[:code] = Integer(line.split(' ', 2).last)
-        rescue ArgumentError => e
-          STDERR.puts e.to_s
-          exit 2
-        end
-      elsif line.start_with? '####OUT'
-        block = []
-        result[:out] = block
-      elsif line.start_with? '####ERR'
-        block = []
-        result[:err] = block
-      else
-        STDERR.puts "Unknown line: #{line}"
-        exit 3
-      end
-    else
+    unless line.start_with? '####'
       block.push line
+      next
+    end
+    if line.start_with? '####COMMAND'
+      if result.has_key? :command
+        all[result[:command]] = result
+        result = Hash.new
+      end
+      result[:command] = line.split(' ', 2).last
+    elsif line.start_with? '####CODE'
+      begin
+        result[:code] = Integer(line.split(' ', 2).last)
+      rescue ArgumentError => e
+        STDERR.puts e.to_s
+        exit 2
+      end
+    elsif line.start_with? '####OUT'
+      block = []
+      result[:out] = block
+    elsif line.start_with? '####ERR'
+      block = []
+      result[:err] = block
+    else
+      STDERR.puts "Unknown line: #{line}"
+      exit 3
     end
   end
+  all[result[:command]] = result if result.has_key? :command
   f.close
   return all
 end
