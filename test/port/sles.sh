@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+sudo zypper refresh
 sudo zypper install -y cmake make gcc-c++ ruby >/dev/null
 git clone --branch master --depth 1 https://github.com/nlohmann/json.git >/dev/null
 cd json

@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+sudo apt-get update
 sudo apt-get install -y -q cmake build-essential ruby rake >/dev/null
 git clone --branch master --depth 1 https://github.com/nlohmann/json.git >/dev/null
 cd json
