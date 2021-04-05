@@ -5,13 +5,13 @@ running datalackey directly. Datalackey is intended to be a dumb process
 that just stores your data, and other progrems are meant to control it.
 I refer to these as controllers.
 
-* datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
-* datalackey-state is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts. State transitions allow the use of loops.
-* datalackey-make is intended for performing a task after all dependencies have been fulfilled.
-* datalackey-run is helper tool that takes care of running datalackey and your controller program as child process of datalackey, freeing your controller to deal only with communicating with datalackey.
-* files2object and object2files are simple alternative to datalackey. files2object outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. object2files does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
+- datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
+- datalackey-state is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts. State transitions allow the use of loops.
+- datalackey-make is intended for performing a task after all dependencies have been fulfilled.
+- datalackey-run is helper tool that takes care of running datalackey and your controller program as child process of datalackey, freeing your controller to deal only with communicating with datalackey.
+- files2object and object2files are simple alternative to datalackey. files2object outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. object2files does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
 
-As you should specify the storage options, each of these requires either
+You must specify the storage options. Each of these requires either
 memory or directory storage be specified. Memory storage requires that all
 data fits in main memory at once. Directory storage allows you to shut things
 down and return later and still have what you were working on remain as it was.
@@ -40,9 +40,9 @@ mapping is a state, except for the ones listed below. You can add as many
 states into the same mapping as you like. They all share the three optional
 mappings that control state transitions:
 
-* signal2state: signal name to next state name mapping. Missing signal for the case where command list is executed and no signal is triggered is indicated by null signal. This mapping applies only to the state it is associated with. Note that if there is no state to move to, the processing will stop, so you want ito use either this mapping or jump command.
-* global_signal2state: as above but stays in effect until replaced. Has lower priority than state-specific mappings. Useful for generic error signals and such.
-* label2signal: maps data label name to signal. Notification about appearance (or replacement) of this label triggers the signal. Use together with wait_data command to wait results to be stored into datalackey before moving on.
+- signal2state: signal name to next state name mapping. Missing signal for the case where command list is executed and no signal is triggered is indicated by null signal. This mapping applies only to the state it is associated with. Note that if there is no state to move to, the processing will stop, so you want ito use either this mapping or jump command.
+- global_signal2state: as above but stays in effect until replaced. Has lower priority than state-specific mappings. Useful for generic error signals and such.
+- label2signal: maps data label name to signal. Notification about appearance (or replacement) of this label triggers the signal. Use together with wait_data command to wait results to be stored into datalackey before moving on.
 
 First state mapping of the first file may have only one state and that state
 is the initial state. State contents are a list of commands. Note that only a
