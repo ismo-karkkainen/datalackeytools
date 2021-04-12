@@ -5,6 +5,7 @@
     - set
     - shellscript
     - |
+      sleep 1
       echo "To stdout"
       echo "To stderr" >&2
       echo $*
@@ -26,6 +27,7 @@
   - argv: [ arg1, arg2 ]
     /bin/sh: ""
     script: |
+      sleep 1
       echo "To stdout"
       echo "To stderr" >&2
       echo $*

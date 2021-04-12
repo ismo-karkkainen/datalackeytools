@@ -17,5 +17,5 @@ cd ..
 cd $1
 rake build
 rake testgem
-sudo rake install testgem
+sudo rake install
 rake test

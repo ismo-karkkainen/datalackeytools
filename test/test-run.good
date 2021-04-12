@@ -154,9 +154,9 @@ Command: ["set", "pipes_noerr", "in", "JSON", "stdin", "out", "JSON", "stdout"]
 Command: ["set", "notify_all", "notify", "data", "notify", "process"]
 Command: ["set", "terminate_delay", 5]
 State: shell-test
-Command: ["set", "shellscript", "echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"]
+Command: ["set", "shellscript", "sleep 1\necho \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"]
 Command: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"shellscript"}
-Expanded: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Expanded: {"argv"=>["arg1", "arg2"], "stdout"=>"stdout-receiving-variable", "stderr"=>"stderr-receiving-variable", "/bin/sh"=>"", "script"=>"sleep 1\necho \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
 Command: ["print", "StdOut", "stdout-receiving-variable"]
 Expanded: ["print", "StdOut", "To stdout\narg1 arg2"]
 StdOut To stdout
@@ -166,13 +166,13 @@ Expanded: ["print", "StdErr", "To stderr"]
 StdErr To stderr
 Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
 Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"shellscript"}
-Expanded: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
+Expanded: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"sleep 1\necho \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 0\n"}
 Command: ["print", "StdOut", "stdout-receiving-variable"]
 StdOut stdout-receiving-variable
 Command: ["print", "StdErr", "stderr-receiving-variable"]
 StdErr stderr-receiving-variable
 Command: ["unset", "stdout-receiving-variable", "stderr-receiving-variable"]
-Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"echo \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
+Command: {"argv"=>["arg1", "arg2"], "/bin/sh"=>"", "script"=>"sleep 1\necho \"To stdout\"\necho \"To stderr\" >&2\necho $*\nexit 1\n"}
 Shell exit: 1
 Signal: error
 State: __terminate_all
