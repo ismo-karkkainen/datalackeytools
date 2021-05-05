@@ -1,45 +1,47 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# Copyright 2019 Ismo Kärkkäinen
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 require 'pathname'
 
+def aargh(message, exit_code)
+  $stderr.puts message
+  exit exit_code
+end
+
 def usage
-  STDERR.puts %q(Usage: files2object [--wait|-w] [key filename ...]
+  aargh %q(Usage: files2object [--wait|-w] [key filename ...]
   Prints out key: file contents pairs as a JSON object.
   File contents are not checked to be valid JSON.
   If filename starts with :, the rest of string is taken to be a JSON value.
   --wait/-w option as first argument will wait for a line/EOF from stdin first.
   (Intended for debugging the program that gets the output from this.)
-)
-  exit 1
+), 1
 end
 
 wait = (ARGV.first == '--wait' or ARGV.first == '-w')
-ARGV.shift() if wait
-usage() if ARGV.length > 0 and ARGV.length % 2 != 0
+ARGV.shift if wait
+usage if !ARGV.empty? && ARGV.size.odd?
 
 ARGV.each_slice(2) do |pair|
   next if pair.last.start_with? ':'
   fp = Pathname.new pair.last
-  unless fp.file?
-    STDERR.puts "Not a file: #{pair.last}"
-    exit 1
-  end
+  aargh "Not a file: #{pair.last}", 1 unless fp.file?
 end
 
 if wait
   begin
-    STDIN.readline
+    $stdin.readline
   rescue StandardError
   end
 end
 
-separator=''
+separator = ''
 print '{'
 ARGV.each_slice(2) do |pair|
-  print "#{separator}\"#{pair.first}\":"
+  print %(#{separator}"#{pair.first}":)
   if pair.last.start_with? ':'
     print pair.last[1..pair.last.size]
   else
@@ -47,11 +49,11 @@ ARGV.each_slice(2) do |pair|
     offset = 0
     while offset < fp.size
       print fp.read(1048576, offset)
-      STDOUT.flush
+      $stdout.flush
       offset += 1048576
     end
   end
   separator = ','
 end
 puts '}'
-STDOUT.flush
+$stdout.flush

@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: false
 
-# Copyright 2019 Ismo Kärkkäinen
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 # Argument handling and checking
@@ -14,6 +15,11 @@ require 'datalackeylib'
 # Argument handling and checking
 
 ENV['POSIXLY_CORRECT'] = '1'
+
+def aargh(message, exit_code = nil)
+  $stderr.puts message
+  exit exit_code unless exit_code.nil?
+end
 
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions, :terminate_delay, :echo
@@ -31,23 +37,23 @@ class Arguments
     parser = OptionParser.new do |opts|
       opts.summary_indent = ''
       opts.summary_width = 28
-      opts.banner = "Usage: datalackey-run [options] command params"
-      opts.separator ""
-      opts.separator "Options:"
-      opts.on_tail("--help", "Print this help and exit.") do
+      opts.banner = 'Usage: datalackey-run [options] command params'
+      opts.separator ''
+      opts.separator 'Options:'
+      opts.on_tail('--help', 'Print this help and exit.') do
         puts opts
         exit 0
       end
-      opts.on('--terminate_delay DELAY', "Seconds to let remaining controller-launched processes to exit, 0 disables.") do |d|
+      opts.on('--terminate_delay DELAY', 'Seconds to let remaining controller-launched processes to exit, 0 disables.') do |d|
         @terminate_delay = d
       end
     end
     DatalackeyProcess.options_for_OptionParser(parser, true,
-      Proc.new { |arg| @lackey = arg },
-      Proc.new { |arg| @memory = arg },
-      Proc.new { |arg| @directory = arg },
-      Proc.new { |arg| @permissions = arg },
-      Proc.new { |arg| @echo = arg })
+      proc { |arg| @lackey = arg },
+      proc { |arg| @memory = arg },
+      proc { |arg| @directory = arg },
+      proc { |arg| @permissions = arg },
+      proc { |arg| @echo = arg })
     parser.parse!
     # Perform sanity checks on the values.
     begin
@@ -58,15 +64,11 @@ class Arguments
         @terminate_delay = 5
       else
         @terminate_delay = Float(@terminate_delay)
-        if @terminate_delay < 0
-          STDERR.puts "Terminate delay less than 0."
-          exit 1
-        end
+        aargh('Terminate delay less than 0.', 1) if @terminate_delay.negative?
       end
-      @echo = @echo ? Proc.new { |json| put_echo json } : nil
+      @echo = @echo ? proc { |json| put_echo json } : nil
     rescue ArgumentError => e
-      STDERR.puts e.to_s
-      exit 1
+      aargh e.to_s, 1
     end
   end
 end
@@ -74,7 +76,7 @@ end
 def put_echo(json)
   begin
     j = JSON.parse(json)
-    if j.is_a?(Array) and j.size > 3 and j[2] == 'bytes'
+    if j.is_a?(Array) && j.size > 3 && j[2] == 'bytes'
       s = ''
       (3...j.size).each do |k|
         s += j[k].chr
@@ -83,7 +85,7 @@ def put_echo(json)
       j.push s
       json = JSON.generate(j)
     end
-  rescue StandardError => e
+  rescue StandardError
   end
   puts json
 end
@@ -102,25 +104,25 @@ $lackey_stderr = StoringReader.new($lackey_proc.stderr)
 $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout, nil, arguments.echo, arguments.echo)
 
 run_actions = {
-  :return => [ { :run_running => [ 'run', 'running', '?' ] } ],
-  :error => [
+  return: [ { run_running: [ 'run', 'running', '?' ] } ],
+  error: [
       [ 'run', 'error', '*' ],
       [ '?', 'error', 'argument', 'invalid' ],
       [ '?', 'error', 'argument', 'not-integer' ],
       [ '?', 'missing', '*' ]
   ],
-  :note => {
-    :run_error_input_failed => [ 'run', 'error', 'input', 'failed' ],
-    :run_child_error_output_format => [ [ 'run', 'error', 'format' ],
+  note: {
+    run_error_input_failed: [ 'run', 'error', 'input', 'failed' ],
+    run_child_error_output_format: [ [ 'run', 'error', 'format' ],
       [ 'error', 'format' ] ],
-    :run_terminated => [ 'run', 'terminated', '?' ],
-    :run_exit => [ 'run', 'exit', '?' ],
-    :run_signal => [ 'run', 'signal', '?' ],
-    :run_stop => [ 'run', 'stopped', '?' ],
-    :run_continue => [ 'run', 'continued' ],
-    :run_closed => [ 'run', 'input', 'closed' ]
+    run_terminated: [ 'run', 'terminated', '?' ],
+    run_exit: [ 'run', 'exit', '?' ],
+    run_signal: [ 'run', 'signal', '?' ],
+    run_stop: [ 'run', 'stopped', '?' ],
+    run_continue: [ 'run', 'continued' ],
+    run_closed: [ 'run', 'input', 'closed' ]
   },
-  :bytes => [ 'run', 'bytes', '?', '*' ]
+  bytes: [ 'run', 'bytes', '?', '*' ]
 }
 
 $output_mutex = Mutex.new
@@ -137,18 +139,18 @@ def run_proc(action, message, vars)
     when :note
       case action[1]
       when :run_error_input_failed
-        $output.push("Input failed.") unless $quitting
+        $output.push('Input failed.') unless $quitting
       when :run_child_error_output_format
-        $output.push "Output format error."
+        $output.push 'Output format error.'
       when :run_terminated
-        $output.push "Terminated."
+        $output.push 'Terminated.'
         $quitting = true
       when :run_exit
         $exit_code = vars.last
         $quitting = true
       when :run_signal then $output.push "Signal: #{vars.first}"
       when :run_stop then $output.push "Stopped: #{vars.first}"
-      when :run_continue then $output.push "Continued."
+      when :run_continue then $output.push 'Continued.'
       end
     when :bytes then $output.push ''.concat(*vars)
     end
@@ -157,13 +159,13 @@ def run_proc(action, message, vars)
 end
 
 run_pa = PatternAction.new([ run_actions ],
-  [ Proc.new { |act, msg, vars| run_proc(act, msg, vars) } ])
+  [ proc { |act, msg, vars| run_proc(act, msg, vars) } ])
 
 # Run the program that was given in the command-line.
-cmd = [ "datalackey-run-#{Process.pid}", 'run' ]
-cmd.concat [ 'in','JSON','stdin','out','JSON','stdout','out','bytes','stderr' ]
-cmd.concat [ 'notify','data','notify','process' ]
-cmd.concat [ 'program' ]
+cmd = [ "datalackey-run-#{Process.pid}", 'run',
+  'in', 'JSON', 'stdin', 'out', 'JSON', 'stdout', 'out', 'bytes', 'stderr',
+  'notify', 'data', 'notify', 'process', 'program'
+]
 cmd.concat ARGV
 $lackey.send(run_pa, cmd, true)
 
@@ -192,9 +194,9 @@ def handle_outputs
   return had_output if $quitting
   $lackey_stderr.getlines.each do |e|
     had_output = true
-    STDERR.puts e
+    aargh e
   end
-  return had_output
+  had_output
 end
 
 def id_list_message(command, ids)
@@ -229,7 +231,7 @@ $lackey_proc.finish
 $lackey.close
 $lackey_stderr.close
 $lackey.finish
-if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+if $lackey_proc.exit_code != 0 && !$lackey_proc.exit_code.nil?
   puts("datalackey exit: #{$lackey_proc.exit_code}")
 end
 exit $exit_code

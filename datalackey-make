@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# Copyright 2019 Ismo Kärkkäinen
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 require 'optparse'
@@ -8,8 +9,8 @@ require 'yaml'
 require 'tempfile'
 require 'datalackeylib'
 
-$CMDOUT = STDOUT
-$USEROUT = STDERR
+$CMDOUT = $stdout
+$USEROUT = $stderr
 $OVERWRITE_ACTION = :replace
 $FOLLOW = 0
 $QUIET = false
@@ -27,16 +28,16 @@ $root_dir = Dir.pwd
 parser = OptionParser.new do |opts|
   opts.summary_indent = '  '
   opts.summary_width = 26
-  opts.banner = "Usage: datalackey-make [options] targets..."
-  opts.separator ""
-  opts.separator "Options:"
+  opts.banner = 'Usage: datalackey-make [options] targets...'
+  opts.separator ''
+  opts.separator 'Options:'
   opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
-    $CMDOUT = STDOUT
-    $USEROUT = STDERR
+    $CMDOUT = $stdout
+    $USEROUT = $stderr
   end
   opts.on('-e', '--stderr', 'Use stderr as command output, stdout for user.') do
-    $CMDOUT = STDERR
-    $USEROUT = STDOUT
+    $CMDOUT = $stderr
+    $USEROUT = $stdout
   end
   opts.on('-r', '--rules FILE', 'Rule file name to load.') do |f|
     $RULEFILE = f
@@ -44,7 +45,7 @@ parser = OptionParser.new do |opts|
   opts.on('-q', '--quiet', 'Suppress normal command output.') do
     $QUIET = true
   end
-  opts.on('--terminate_delay DELAY', "Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.") do |d|
+  opts.on('--terminate_delay DELAY', 'Wait DELAY seconds before terminating remaining controller-launched processes, 0 disables.') do |d|
     $TERMINATE_DELAY = d
   end
   opts.on('-h', '--help', 'Print this help and exit.') do
@@ -65,11 +66,11 @@ parser = OptionParser.new do |opts|
 end
 
 DatalackeyProcess.options_for_OptionParser(parser, true,
-  Proc.new { |arg| $LACKEY = arg },
-  Proc.new { |arg| $MEMORY = arg },
-  Proc.new { |arg| $DIRECTORY = arg },
-  Proc.new { |arg| $PERMISSIONS = arg },
-  Proc.new { |arg| $ECHO = arg })
+  proc { |arg| $LACKEY = arg },
+  proc { |arg| $MEMORY = arg },
+  proc { |arg| $DIRECTORY = arg },
+  proc { |arg| $PERMISSIONS = arg },
+  proc { |arg| $ECHO = arg })
 parser.parse!
 
 begin
@@ -90,12 +91,12 @@ end
 
 $userout_mutex = Mutex.new
 def userout(message)
-  return false if message.is_a?(Array) and message.empty?
+  return false if message.is_a?(Array) && message.empty?
   message = [ message ] unless message.is_a? Array
   $userout_mutex.synchronize do
     message.each { |m| $USEROUT.puts m }
   end
-  return true
+  true
 end
 
 def fileline(source, index = nil)
@@ -103,7 +104,7 @@ def fileline(source, index = nil)
     index = source[:load][:index]
     source = source[:load][:source]
   end
-  return "#{source} : #{index}"
+  "#{source} : #{index}"
 end
 
 def load_rulefile(filename, current_directory, parent_includes = [])
@@ -182,7 +183,7 @@ def load_rulefile(filename, current_directory, parent_includes = [])
       rules.push rule
     end
   end
-  return rules
+  rules
 end
 
 if $RULEFILE.nil?
@@ -200,7 +201,7 @@ exit(2) if rules.nil?
 target2rule = Hash.new(nil)
 rules.each do |rule|
   tgt = rule[:target]
-  if target2rule.has_key? tgt
+  if target2rule.key? tgt
     unless $OVERWRITE_ACTION == :replace
       userout "#{tgt} from #{fileline(target2rule[tgt])} replaced by #{fileline(rule)}"
       exit(2) if $OVERWRITE_ACTION == :error
@@ -213,9 +214,9 @@ end
 todo = ARGV.clone
 todo.uniq!
 needed = Hash.new(nil)
-while not todo.empty?
+while !todo.empty?
   tgt = todo.pop
-  next if needed.has_key? tgt
+  next if needed.key? tgt
   rule = target2rule[tgt]
   if rule.nil?
     userout "Unprovided: #{tgt}"
@@ -223,7 +224,7 @@ while not todo.empty?
   end
   needed[tgt] = rule
   rule[:requirements].each do |req|
-    todo.push(req) unless needed.has_key? req
+    todo.push(req) unless needed.key? req
   end
 end
 
@@ -251,7 +252,7 @@ needed.each_pair do |target, rule|
   needers = []
   rule[:needs].each_pair do |tgt, r|
     r = needed[tgt]
-    needers.push(r) if r[:needs].has_key? target
+    needers.push(r) if r[:needs].key? target
   end
   unless needers.empty?
     userout "#{fileline(rule)} : #{target} both needs and is needed by:"
@@ -266,15 +267,15 @@ exit(2) if failed
 # Sort so that least needed are first.
 order = needed.values
 def compare(a, b)
-  return -1 if b[:needs].has_key? a[:target]
-  return 1 if a[:needs].has_key? b[:target]
+  return -1 if b[:needs].key? a[:target]
+  return 1 if a[:needs].key? b[:target]
   aidx = ARGV.index(a[:target])
   bidx = ARGV.index(b[:target])
   if aidx.nil?
     if bidx.nil?
       c = a[:needs].size <=> b[:needs].size
       return c unless c == 0
-      return a[:commands].length <=> b[:commands].length
+      return a[:commands].size <=> b[:commands].size
     end
     return 1
   else
@@ -288,7 +289,7 @@ order.sort! { |a, b| compare(a, b) }
 fulfilled = Hash.new()
 order.each do |rule|
   rule[:needs].keys.each do |req|
-    next if fulfilled.has_key? req
+    next if fulfilled.key? req
     userout "#{fileline(rule)} : #{rule[:target]} unfulfilled requirement #{req}"
     exit 2
   end
@@ -307,8 +308,8 @@ class Handlers
   end
 
   def register(name, object, expand_skip_count = 0)
-    raise ArgumentError.new("Command name is not a string.") unless name.is_a? String
-    @handlers[name] = { :object => object, :skip => expand_skip_count }
+    raise ArgumentError, 'Command name is not a string.' unless name.is_a? String
+    @handlers[name] = { object: object, skip: expand_skip_count }
   end
 
   def set_error(message)
@@ -316,11 +317,11 @@ class Handlers
   end
 
   def get_binding
-    return binding
+    binding
   end
 
   def rule_source
-    return @rule.nil? ? nil : @rule.fetch(:load, { }).fetch(:source, nil)
+    @rule.nil? ? nil : @rule.fetch(:load, { }).fetch(:source, nil)
   end
 
   def expand(item, info, seen = [])
@@ -339,12 +340,12 @@ class Handlers
       return result
     end
     info.concat([ ',', item ]) unless info.last == item
-    if item.is_a?(String) and item.start_with?('$') and ENV.has_key? item[1...item.length]
-      item = ENV[item[1...item.length]]
+    if item.is_a?(String) && item.start_with?('$') && ENV.key?(item[1...item.size])
+      item = ENV[item[1...item.size]]
       info.concat [ '=>', item ]
       return expand(item, info, seen)
     end
-    if @variables.has_key? item
+    if @variables.key? item
       s = seen.clone
       s.push item
       raise "Loop: #{item} via #{s.join(' => ')}." if seen.include? item
@@ -352,7 +353,7 @@ class Handlers
       info.concat [ '=>', item ]
       return expand(item, info, s)
     end
-    return item
+    item
   end
 
   def run(cmd, rule)
@@ -370,9 +371,9 @@ class Handlers
           expanded = expand(cmd, info)
         else
           skip = handler[:skip]
-          skip = cmd.length if cmd.length < skip
+          skip = cmd.size if cmd.size < skip
           expanded = cmd[0...skip]
-          rest = cmd[skip...cmd.length]
+          rest = cmd[skip...cmd.size]
           rest = [ rest ] unless rest.is_a? Array
           expanded.concat expand(rest, info)
         end
@@ -388,7 +389,7 @@ class Handlers
     name = nil
     if expanded.is_a? Hash
       @handlers.each_key do |key|
-        next unless cmd.has_key? key # Registered names ought to be unique.
+        next unless cmd.key? key # Registered names ought to be unique.
         name = key
         break
       end
@@ -413,12 +414,12 @@ class Handlers
     end
     userout("Command: #{name}") if $FOLLOW == 2
     return false unless handler[:object].handle(expanded)
-    return @error_mutex.synchronize { @error.nil? }
+    @error_mutex.synchronize { @error.nil? }
   end
 end
 $handlers = Handlers.new
 
-$terminator = Proc.new do |action, message, vars|
+$terminator = proc do |action, message, vars|
   case action.first
   when :error
     $handlers.set_error(message.join(' '))
@@ -443,20 +444,20 @@ class Command
   def handle(cmd)
     cmd.flatten!
     $lackey.send(@action, cmd)
-    return true
+    true
   end
 
   def assert(cmd, minlen, maxlen = nil)
-    if cmd.length < minlen
-      userout "Command #{@name} too short: #{cmd.length} < #{minlen}"
+    if cmd.size < minlen
+      userout "Command #{@name} too short: #{cmd.size} < #{minlen}"
       return false
     end
     return true if maxlen.nil?
-    if maxlen < cmd.length
-      userout "Command #{@name} too long: #{maxlen} < #{cmd.length}"
+    if maxlen < cmd.size
+      userout "Command #{@name} too long: #{maxlen} < #{cmd.size}"
       return false
     end
-    return true
+    true
   end
 end
 
@@ -466,7 +467,7 @@ class CommentCommand < Command
   end
 
   def handle(cmd)
-    return true
+    true
   end
 end
 CommentCommand.new
@@ -478,7 +479,7 @@ class SetCommand < Command
 
   def handle(cmd)
     return false unless assert(cmd, 3)
-    $handlers.variables[cmd[1]] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    $handlers.variables[cmd[1]] = cmd.size == 3 ? cmd[2] : cmd[2...cmd.size]
     return true
   end
 end
@@ -492,10 +493,10 @@ class DefaultCommand < Command
   def handle(cmd)
     return false unless assert(cmd, 3)
     v = cmd[1]
-    unless $handlers.variables.has_key? v
-      $handlers.variables[v] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    unless $handlers.variables.key? v
+      $handlers.variables[v] = cmd.size == 3 ? cmd[2] : cmd[2...cmd.size]
     end
-    return true
+    true
   end
 end
 DefaultCommand.new
@@ -509,7 +510,7 @@ class UnsetCommand < Command
     cmd.flatten!
     cmd.shift
     cmd.each { |name| $handlers.variables.delete name }
-    return true
+    true
   end
 end
 UnsetCommand.new
@@ -523,9 +524,9 @@ class AssertVarCommand < Command
     cmd.flatten!
     cmd.shift
     unset = []
-    cmd.each { |name| unset.push(name) unless $handlers.variables.has_key? name }
+    cmd.each { |name| unset.push(name) unless $handlers.variables.key? name }
     userout("Not set: #{unset.join(' ')}") unless unset.empty?
-    return unset.empty?
+    unset.empty?
   end
 end
 AssertVarCommand.new
@@ -539,9 +540,9 @@ class AssertNotVar < Command
     cmd.flatten!
     cmd.shift
     set = []
-    cmd.each { |name| set.push(name) if $handlers.variables.has_key? name }
+    cmd.each { |name| set.push(name) if $handlers.variables.key? name }
     userout("Set: #{set.join(' ')}") unless set.empty?
-    return set.empty?
+    set.empty?
   end
 end
 AssertNotVar.new
@@ -556,29 +557,29 @@ class AssertDataCommand < Command
     cmd.shift
     data = $lackey.data
     missing = []
-    cmd.each { |name| missing.push(name) unless data.has_key? name }
+    cmd.each { |name| missing.push(name) unless data.key? name }
     userout("Missing: #{missing.join(' ')}") unless missing.empty?
-    return missing.empty?
+    missing.empty?
   end
 end
 AssertDataCommand.new
 
 class RunBase < Command
   @@actions_run_common = {
-    :error => [ "run", "error", "*" ],
-    :note => {
-      :run_error_input_failed => [ "run", "error", "input", "failed" ],
-      :run_child_error_output_format => [ [ "run", "error", "format" ],
-        [ "error", "format" ] ]
+    error: [ 'run', 'error', '*' ],
+    note: {
+      run_error_input_failed: [ 'run', 'error', 'input', 'failed' ],
+      run_child_error_output_format: [
+        [ 'run', 'error', 'format' ], [ 'error', 'format' ] ]
     },
-    :exitcode => [ "run", "exit", "?" ],
-    :bytes => [ "run", "bytes", "?", "*" ]
+    exitcode: [ 'run', 'exit', '?' ],
+    bytes: [ 'run', 'bytes', '?', '*' ]
   }
   @@prev_bytes_mutex = Mutex.new
   @@prev_bytes_id = nil
 
   def initialize(name)
-    @msgmaker = Proc.new do |action, message, vars|
+    @msgmaker = proc do |action, message, vars|
       message_maker(action, message, vars)
     end
     super(name)
@@ -607,7 +608,7 @@ class RunBase < Command
       out.push (vars.map { |c| c.chr }).join
     end
     userout(out) unless $QUIET
-    return not(out.empty?)
+    !out.empty?
   end
 
   def handle(cmd)
@@ -617,12 +618,12 @@ class RunBase < Command
     cmd[1] = t
     # Locate executable unless absolute path.
     idx = cmd.index 'program'
-    unless idx.nil? or idx + 1 == cmd.length
+    unless idx.nil? || idx + 1 == cmd.size
       cmd[idx + 1] = DatalackeyProcess.locate_executable(cmd[idx + 1],
         [ Dir.pwd, $root_dir, File.dirname($handlers.rule_source) ])
     end # Missing program will be found normally and causes error.
     $lackey.send(@action, cmd, true)
-    return true
+    true
   end
 end
 
@@ -630,8 +631,8 @@ class RunCommand < RunBase
   def initialize
     super('run')
     @action = PatternAction.new([
-      { :return => [ 'run', 'running', '?' ],
-        :error => [ 'run', 'terminated', '?' ]},
+      { return: [ 'run', 'running', '?' ],
+        error: [ 'run', 'terminated', '?' ]},
       @@actions_run_common ], [ @msgmaker, $terminator ])
   end
 
@@ -650,8 +651,8 @@ class ProcessCommand < Command
 
   def handle(cmd)
     cmd.flatten!
-    cmd.concat $lackey.launched.keys if cmd.length == 1
-    return true if cmd.length == 1
+    cmd.concat $lackey.launched.keys if cmd.size == 1
+    return true if cmd.size == 1
     super(cmd)
   end
 end
@@ -700,16 +701,12 @@ class WaitProcessCommand < Command
       userout "Not a number: #{cmd[1]}"
       return false
     end
-    if 2 < cmd.length
-      waited = $lackey.launched.keys
-    else
-      waited = cmd[2...cmd.length]
-    end
+    waited = 2 < cmd.size ? $lackey.launched.keys : cmd[2...cmd.size]
     while (Time.new <=> deadline) == -1
       sleep(0.2)
       remains = false
       current = $lackey.process.keys
-      waited.each { |id| remains = (remains or current.include? id) }
+      waited.each { |id| remains ||= current.include? id }
       return true unless remains
     end
   end
@@ -723,10 +720,10 @@ class WaitDataCommand < Command
 
   def handle(cmd)
     cmd.flatten!
-    unseen = cmd[1...cmd.length]
-    while true
+    unseen = cmd[1...cmd.size]
+    loop do
       data = $lackey.data
-      unseen.delete_if { |u| data.has_key? u }
+      unseen.delete_if { |u| data.key? u }
       return true if unseen.empty?
       sleep(0.2)
     end
@@ -766,7 +763,7 @@ class PrintCommand < Command
       cmd[k] = cmd[k].flatten.join(' ')
     end
     userout cmd.join(multi ? "\n" : ' ')
-    return true
+    true
   end
 end
 PrintCommand.new
@@ -779,7 +776,7 @@ class ValueCommand < Command
     out = []
     cmd.each { |id| out.push "#{id} : #{map.fetch(id, 'NOT FOUND')}" }
     userout out
-    return true
+    true
   end
 end
 
@@ -807,7 +804,7 @@ PIDCommand.new
 
 class ShellCommand < Command
   def initialize
-    @rule =  { 'argv' => '*', 'script' => '*', 'stdout' => '?', 'stderr' => '?', '*' => '*' }
+    @rule = { 'argv' => '*', 'script' => '*', 'stdout' => '?', 'stderr' => '?', '*' => '*' }
     super('script')
   end
 
@@ -824,14 +821,14 @@ class ShellCommand < Command
     cmd.delete 'stderr'
     vin = cmd.fetch('stdin', nil)
     cmd.delete 'stdin'
-    if cmd.length != 1
+    if cmd.size != 1
       userout "Multiple interpreters: #{cmd.keys.sort.join(' ')}"
       return false
     end
     interpreter = cmd.keys.first
     hashbangargs = cmd[cmd.keys.first]
     hashbangargs = hashbangargs.join(' ') if hashbangargs.is_a? Array
-    unless File.exist?(interpreter) and File.executable?(interpreter)
+    unless File.exist?(interpreter) && File.executable?(interpreter)
       userout "Not found or not an executable: #{interpreter}"
       return false
     end
@@ -840,11 +837,11 @@ class ShellCommand < Command
     begin
       temp.puts "#!#{interpreter} #{hashbangargs}"
       temp.puts script
-      temp.chmod(0700)
+      temp.chmod(0o700)
       temp.close
       argv.prepend temp.path
     rescue StandardError => e
-      userout "Shell script prepare exception:\n#{e.to_s}"
+      userout "Shell script prepare exception:\n#{e}"
       temp.close!
       return false
     end
@@ -867,7 +864,7 @@ class ShellCommand < Command
       wait = nil
       userout("Shell exit: #{exitcode}") if exitcode != 0
     rescue StandardError => e
-      userout "Shell run exception:\n#{e.to_s}"
+      userout "Shell run exception:\n#{e}"
       return false
     ensure
       stdin.close unless stdin.nil?
@@ -876,7 +873,7 @@ class ShellCommand < Command
       wait.join unless wait.nil?
       temp.close!
     end
-    return exitcode == 0
+    exitcode.zero?
   end
 end
 ShellCommand.new
@@ -893,38 +890,38 @@ class RubyCommand < Command
     begin
       eval(script, $handlers.get_binding)
     rescue StandardError => e
-      userout "Eval failed: #{e.to_s}"
+      userout "Eval failed: #{e}"
       return false
     end
-    return true
+    true
   end
 end
 RubyCommand.new
 
 
-def notification_check(action, mesage, vars)
+def notification_check(action, message, vars)
   case action.first
   when :data_error then $handlers.set_error(message.to_s)
   when :error then $handlers.set_error(message.to_s)
   end
 end
-ntf_check = Proc.new { |act, msg, vars| notification_check(act, msg, vars) }
+ntf_check = proc { |act, msg, vars| notification_check(act, msg, vars) }
 
 # Check if we actually need to be running datalackey.
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
   # Seemingly running under datalackey.
   unless $PERMISSIONS.nil?
-    userout "Cannot give --permissions/-p unless running datalackey."
+    userout 'Cannot give --permissions/-p unless running datalackey.'
     exit 1
   end
-  if STDIN.tty?
-    userout "Not running under datalackey, turning on memory storage."
+  if $stdin.tty?
+    userout 'Not running under datalackey, turning on memory storage.'
     $MEMORY = true
   end
 end
 
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
-  $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
+  $lackey_proc = DatalackeyParentProcess.new($CMDOUT, $stdin)
   $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
   $lackey = DatalackeyIO.new(
     $lackey_proc.stdin, $lackey_proc.stdout, ntf_check)
@@ -940,9 +937,9 @@ else
     exit 1
   end
   $lackey_stderr = StoringReader.new($lackey_proc.stderr)
-  echo = $ECHO ? Proc.new { |json| userout json } : nil
-  $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
-    ntf_check, echo, echo)
+  echo = $ECHO ? proc { |json| userout json } : nil
+  $lackey = DatalackeyIO.new(
+    $lackey_proc.stdin, $lackey_proc.stdout, ntf_check, echo, echo)
 end
 
 # Perform all computations in given order.
@@ -959,17 +956,16 @@ order.each do |rule|
     break
   end
   break if failed
-  if $TIME
-    t = time
-    time = Time.new
-    userout "Elapsed #{(time - t).round(2).to_s} s"
-  end
+  next unless $TIME
+  t = time
+  time = Time.new
+  userout "Elapsed #{(time - t).round(2)} s"
 end
 
 unless $lackey.closed?
   endfeed = [ nil, 'end-feed' ]
   endfeed.concat $lackey.launched.keys
-  $lackey.send(nil, endfeed, true) if endfeed.length > 2
+  $lackey.send(nil, endfeed, true) if endfeed.size > 2
 end
 terminate_time = Time.new + $TERMINATE_DELAY
 until $lackey.closed?
@@ -979,20 +975,20 @@ until $lackey.closed?
   next if (Time.new <=> terminate_time) == -1
   terminate = [ nil, 'terminate' ]
   terminate.concat procs
-  $lackey.send(nil, terminate, true) if terminate.length > 2
+  $lackey.send(nil, terminate, true) if terminate.size > 2
   break
 end
 
 $lackey_proc.finish
 $lackey.close
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
   $lackey_proc.stdout.close
-  STDERR.close
+  $stderr.close
 end
 $lackey.finish
 $lackey_stderr.close
 userout $lackey_stderr.getlines
-if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+if !$lackey_proc.exit_code.zero? && !$lackey_proc.exit_code.nil?
   userout("datalackey exit: #{$lackey_proc.exit_code}")
 end
 exit failed ? 1 : 0

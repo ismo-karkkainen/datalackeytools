@@ -1,4 +1,6 @@
-task :default => [ :install ]
+# frozen_string_literal: true
+
+task default: [:install]
 
 desc 'Clean.'
 task :clean do
@@ -6,12 +8,12 @@ task :clean do
 end
 
 desc 'Build gem.'
-task :build => [:clean] do
+task build: [:clean] do
   `gem build datalackeylib.gemspec`
 end
 
 desc 'Build and install gem.'
-task :install => [:build] do
+task install: [:build] do
   `gem install datalackeylib-*.gem`
 end
 

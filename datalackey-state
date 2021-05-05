@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# Copyright 2019 Ismo Kärkkäinen
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 require 'optparse'
@@ -8,8 +9,8 @@ require 'yaml'
 require 'tempfile'
 require 'datalackeylib'
 
-$CMDOUT = STDOUT
-$USEROUT = STDERR
+$CMDOUT = $stdout
+$USEROUT = $stderr
 $OVERWRITE_ACTION = nil
 $FOLLOW = 0
 $QUIET = false
@@ -25,16 +26,16 @@ $root_dir = Dir.pwd
 parser = OptionParser.new do |opts|
   opts.summary_indent = '  '
   opts.summary_width = 26
-  opts.banner = "Usage: datalackey-state [options] state-files..."
-  opts.separator ""
-  opts.separator "Options:"
+  opts.banner = 'Usage: datalackey-state [options] state-files...'
+  opts.separator ''
+  opts.separator 'Options:'
   opts.on('-o', '--stdout', 'Use stdout as command output, stderr for user.') do
-    $CMDOUT = STDOUT
-    $USEROUT = STDERR
+    $CMDOUT = $stdout
+    $USEROUT = $stderr
   end
   opts.on('-e', '--stderr', 'Use stderr as command output, stdout for user.') do
-    $CMDOUT = STDERR
-    $USEROUT = STDOUT
+    $CMDOUT = $stderr
+    $USEROUT = $stdout
   end
   opts.on('-q', '--quiet', 'Suppress normal command output.') do
     $QUIET = true
@@ -56,11 +57,11 @@ parser = OptionParser.new do |opts|
 end
 
 DatalackeyProcess.options_for_OptionParser(parser, true,
-    Proc.new { |arg| $LACKEY = arg },
-    Proc.new { |arg| $MEMORY = arg },
-    Proc.new { |arg| $DIRECTORY = arg },
-    Proc.new { |arg| $PERMISSIONS = arg },
-    Proc.new { |arg| $ECHO = arg })
+  proc { |arg| $LACKEY = arg },
+  proc { |arg| $MEMORY = arg },
+  proc { |arg| $DIRECTORY = arg },
+  proc { |arg| $PERMISSIONS = arg },
+  proc { |arg| $ECHO = arg })
 parser.parse!
 
 if ARGV.empty?
@@ -70,12 +71,12 @@ end
 
 $userout_mutex = Mutex.new
 def userout(message)
-  return false if message.is_a?(Array) and message.empty?
+  return false if message.is_a?(Array) && message.empty?
   message = [ message ] unless message.is_a? Array
   $userout_mutex.synchronize do
     message.each { |m| $USEROUT.puts m }
   end
-  return true
+  true
 end
 
 class Machine
@@ -97,13 +98,13 @@ class Machine
   end
 
   def register(name, object, expand_skip_count = 0)
-    raise ArgumentError.new("Command name is not a string.") unless name.is_a? String
+    raise ArgumentError, 'Command name is not a string.' unless name.is_a? String
     @commands[name] = object
     @skip_expand[name] = expand_skip_count if expand_skip_count > 0
   end
 
   def get_binding
-    return binding
+    binding
   end
 
   def expand(item, info, seen = [])
@@ -122,12 +123,12 @@ class Machine
       return result
     end
     info.concat([ ',', item ]) unless info.last == item
-    if item.is_a?(String) and item.start_with?('$') and ENV.has_key? item[1...item.length]
-      item = ENV[item[1...item.length]]
+    if item.is_a?(String) && item.start_with?('$') && ENV.key?(item[1...item.size])
+      item = ENV[item[1...item.size]]
       info.concat [ '=>', item ]
       return expand(item, info, seen)
     end
-    if @variables.has_key? item
+    if @variables.key? item
       s = seen.clone
       s.push item
       raise "Loop: #{item} via #{s.join(' => ')}." if seen.include? item
@@ -135,12 +136,12 @@ class Machine
       info.concat [ '=>', item ]
       return expand(item, info, s)
     end
-    return item
+    item
   end
 
   def set_signal(sig, target_state = nil)
     @signal_mutex.synchronize do
-      if @signal.nil? or sig == 'error'
+      if @signal.nil? || sig == 'error'
         userout "Signal: #{sig}" if $FOLLOW > 0
         @signal = sig
         @had_error = @signal == 'error'
@@ -148,7 +149,7 @@ class Machine
         return true
       end
     end
-    return false
+    false
   end
 
   def set_error(message)
@@ -165,7 +166,7 @@ class Machine
   end
 
   def state_source
-    return @state.nil? ? nil : @state.fetch(:load, { }).fetch(:source, nil)
+    @state.nil? ? nil : @state.fetch(:load, { }).fetch(:source, nil)
   end
 
   def run_state(state, name)
@@ -179,14 +180,14 @@ class Machine
           expanded = expand(cmd, info)
         else
           skip = @skip_expand.fetch(cmd.first, 0)
-          skip = cmd.length if cmd.length < skip
+          skip = cmd.size if cmd.size < skip
           expanded = cmd[0...skip]
-          rest = cmd[skip...cmd.length]
+          rest = cmd[skip...cmd.size]
           rest = [ rest ] unless rest.is_a? Array
           expanded.concat expand(rest, info)
         end
         s_exp = expanded.to_s
-        userout "Expanded: #{s_exp}" if $FOLLOW > 3 and s_cmd != s_exp
+        userout "Expanded: #{s_exp}" if $FOLLOW > 3 && s_cmd != s_exp
       rescue RuntimeError => e
         set_error e.to_s
         return
@@ -195,12 +196,12 @@ class Machine
       name = nil
       if expanded.is_a? Hash
         @commands.each_key do |key|
-          next unless cmd.has_key? key # Registered names ought to be unique.
+          next unless cmd.key? key # Registered names ought to be unique.
           name = key
           break
         end
         if name.nil?
-          set_error("Match for dictionary keys not found.")
+          set_error('Match for dictionary keys not found.')
           break
         end
       else
@@ -215,7 +216,7 @@ class Machine
       end
       handler = @commands[name]
       set_error("Unknown command: #{name}") if handler.nil?
-      break if handler.nil? or not get_signal.nil?
+      break if handler.nil? || !get_signal.nil?
       userout "Command: #{name}" if $FOLLOW == 2
       handler.handle(expanded)
       break unless get_signal.nil? # Prevents following output for next command.
@@ -228,10 +229,10 @@ class Machine
     finalized = false
     name = initial_state_name
     signal2state = { } # Only changes when state has new global mapping.
-    while true
+    loop do
       userout($lackey_stderr.getlines) unless $QUIET
       finalized = true if name == last_state_name
-      unless states.has_key? name
+      unless states.key? name
         userout "Transition to unknown state: #{name}"
         break
       end
@@ -263,22 +264,19 @@ class Machine
         break if name.nil?
       end
     end
-    if not finalized and states.has_key? last_state_name
-      run_state(states[last_state_name], last_state_name)
-    end
+    return unless !finalized && states.key?(last_state_name)
+    run_state(states[last_state_name], last_state_name)
   end
 end
 $machine = Machine.new
 
-$signal_sender = Proc.new do |action, message, vars|
+$signal_sender = proc do |action, message, vars|
   case action.first
   when :error
     $machine.set_error(message.join(' '))
     true
   when :exitcode
-    if vars.first != 0
-      $machine.set_error(message.join(' '))
-    end
+    $machine.set_error(message.join(' ')) if vars.first != 0
     true
   else false
   end
@@ -299,16 +297,16 @@ class Command
   end
 
   def assert(cmd, minlen, maxlen = nil)
-    if cmd.length < minlen
-      $machine.set_error "Command #{@name} too short: #{cmd.length} < #{minlen}"
+    if cmd.size < minlen
+      $machine.set_error "Command #{@name} too short: #{cmd.size} < #{minlen}"
       return false
     end
     return true if maxlen.nil?
-    if maxlen < cmd.length
-      $machine.set_error "Command #{@name} too long: #{maxlen} < #{cmd.length}"
+    if maxlen < cmd.size
+      $machine.set_error "Command #{@name} too long: #{maxlen} < #{cmd.size}"
       return false
     end
-    return true
+    true
   end
 end
 
@@ -329,7 +327,7 @@ class SetCommand < Command
 
   def handle(cmd)
     return unless assert(cmd, 3)
-    $machine.variables[cmd[1]] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    $machine.variables[cmd[1]] = cmd.size == 3 ? cmd[2] : cmd[2...cmd.size]
   end
 end
 SetCommand.new
@@ -342,8 +340,8 @@ class DefaultCommand < Command
   def handle(cmd)
     return unless assert(cmd, 3)
     v = cmd[1]
-    return if $machine.variables.has_key? v
-    $machine.variables[v] = (cmd.length == 3) ? cmd[2] : cmd[2...cmd.length]
+    return if $machine.variables.key? v
+    $machine.variables[v] = cmd.size == 3 ? cmd[2] : cmd[2...cmd.size]
   end
 end
 DefaultCommand.new
@@ -370,7 +368,7 @@ class AssertVarCommand < Command
     cmd.flatten!
     cmd.shift
     unset = []
-    cmd.each { |name| unset.push(name) unless $machine.variables.has_key? name }
+    cmd.each { |name| unset.push(name) unless $machine.variables.key? name }
     $machine.set_error("Not set: #{unset.join(' ')}") unless unset.empty?
   end
 end
@@ -385,7 +383,7 @@ class AssertNotVar < Command
     cmd.flatten!
     cmd.shift
     set = []
-    cmd.each { |name| set.push(name) if $machine.variables.has_key? name }
+    cmd.each { |name| set.push(name) if $machine.variables.key? name }
     $machine.set_error("Set: #{set.join(' ')}") unless set.empty?
   end
 end
@@ -401,7 +399,7 @@ class AssertDataCommand < Command
     cmd.shift
     data = $lackey.data
     missing = []
-    cmd.each { |name| missing.push(name) unless data.has_key? name }
+    cmd.each { |name| missing.push(name) unless data.key? name }
     $machine.set_error("Missing: #{missing.join(' ')}") unless missing.empty?
   end
 end
@@ -417,7 +415,7 @@ class PushCommand < Command
     # Creates a stack if not present, or turns scalar into stack.
     stack = $machine.variables.fetch(cmd[1], [])
     stack = [ stack ] unless stack.is_a? Array
-    stack.push(3 < cmd.length ? cmd[2...cmd.length] : cmd[2])
+    stack.push(3 < cmd.size ? cmd[2...cmd.size] : cmd[2])
     $machine.variables[cmd[1]] = stack
   end
 end
@@ -430,7 +428,7 @@ class PopCommand < Command
 
   def handle(cmd)
     return unless assert(cmd, 3, 3)
-    unless $machine.variables.has_key? cmd[1]
+    unless $machine.variables.key? cmd[1]
       $machine.set_error("Stack not found: #{cmd[1]}")
       return
     end
@@ -446,28 +444,28 @@ PopCommand.new
 
 class RunBase < Command
   @@actions_run_common = {
-    :error => {
-      :syntax => [ "run", "error", "?", "argument", "unknown" ],
-      :command_error => [ "run", "error", "*" ],
-      :run_internal => [ [ "run", "error", "exception" ],
-        [ "run", "error", "no-memory" ],
-        [ "run", "error", "no-processes" ],
-        [ "run", "error", "no-thread" ],
-        [ "run", "error", "pipe" ] ]
+    error: {
+      syntax: [ 'run', 'error', '?', 'argument', 'unknown' ],
+      command_error: [ 'run', 'error', '*' ],
+      run_internal: [ [ 'run', 'error', 'exception' ],
+        [ 'run', 'error', 'no-memory' ],
+        [ 'run', 'error', 'no-processes' ],
+        [ 'run', 'error', 'no-thread' ],
+        [ 'run', 'error', 'pipe' ] ]
     },
-    :note => {
-      :run_error_input_failed => [ "run", "error", "input", "failed" ],
-      :run_child_error_output_format => [ [ "run", "error", "format" ],
-        [ "error", "format" ] ]
+    note: {
+      run_error_input_failed: [ 'run', 'error', 'input', 'failed' ],
+      run_child_error_output_format: [
+        [ 'run', 'error', 'format' ], [ 'error', 'format' ] ]
     },
-    :exitcode => [ "run", "exit", "?" ],
-    :bytes => [ "run", "bytes", "?", "*" ]
+    exitcode: [ 'run', 'exit', '?' ],
+    bytes: [ 'run', 'bytes', '?', '*' ]
   }
   @@prev_bytes_mutex = Mutex.new
   @@prev_bytes_id = nil
 
   def initialize(name)
-    @msgmaker = Proc.new do |action, message, vars|
+    @msgmaker = proc do |action, message, vars|
       message_maker(action, message, vars)
     end
     super(name)
@@ -495,7 +493,7 @@ class RunBase < Command
       out.push ''.concat(*vars)
     end
     userout(out) unless $QUIET
-    return not(out.empty?)
+    !out.empty?
   end
 
   def handle(cmd)
@@ -505,7 +503,7 @@ class RunBase < Command
     cmd[1] = t
     # Locate executable unless absolute path.
     idx = cmd.index 'program'
-    unless idx.nil? or idx + 1 == cmd.length
+    unless idx.nil? || idx + 1 == cmd.size
       cmd[idx + 1] = DatalackeyProcess.locate_executable(cmd[idx + 1],
         [ Dir.pwd, $root_dir, File.dirname($machine.state_source) ])
     end # Missing program will be found normally and causes error.
@@ -518,8 +516,8 @@ class RunCommand < RunBase
   def initialize
     super('run')
     @action = PatternAction.new([
-      { :return => [ 'run', 'running', '?' ],
-        :error => [ 'run', 'terminated', '?' ]},
+      { return: [ 'run', 'running', '?' ],
+        error: [ 'run', 'terminated', '?' ] },
       @@actions_run_common ], [ @msgmaker, $signal_sender ])
   end
 
@@ -538,8 +536,8 @@ class ProcessCommand < Command
 
   def handle(cmd)
     cmd.flatten!
-    cmd.concat $lackey.launched.keys if cmd.length == 1
-    return if cmd.length == 1
+    cmd.concat $lackey.launched.keys if cmd.size == 1
+    return if cmd.size == 1
     super(cmd)
   end
 end
@@ -568,8 +566,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { :error => [ 'error', '*' ] } ],
-      [ $signal_sender ])
+      [ { error: [ 'error', '*' ] } ], [ $signal_sender ])
   end
 end
 FeedCommand.new
@@ -588,16 +585,12 @@ class WaitProcessCommand < Command
       $machine.set_error "Not a number: #{cmd[1]}"
       return
     end
-    if 2 < cmd.length
-      waited = $lackey.launched.keys
-    else
-      waited = cmd[2...cmd.length]
-    end
+    waited = 2 < cmd.size ? $lackey.launched.keys : cmd[2...cmd.size]
     while (Time.new <=> deadline) == -1
       sleep(0.2)
       remains = false
       current = $lackey.process.keys
-      waited.each { |id| remains = (remains or current.include? id) }
+      waited.each { |id| remains ||= current.include? id }
       return unless remains
     end
   end
@@ -611,10 +604,10 @@ class WaitDataCommand < Command
 
   def handle(cmd)
     cmd.flatten!
-    unseen = cmd[1...cmd.length]
-    while true
+    unseen = cmd[1...cmd.size]
+    loop do
       data = $lackey.data
-      unseen.delete_if { |u| data.has_key? u }
+      unseen.delete_if { |u| data.key? u }
       break if unseen.empty?
       sleep(0.2)
     end
@@ -732,7 +725,7 @@ PIDCommand.new
 
 class ShellCommand < Command
   def initialize
-    @rule =  { 'argv' => '*', 'script' => '*', 'stdout' => '?', 'stderr' => '?', '*' => '*' }
+    @rule = { 'argv' => '*', 'script' => '*', 'stdout' => '?', 'stderr' => '?', '*' => '*' }
     super('script')
   end
 
@@ -749,14 +742,14 @@ class ShellCommand < Command
     cmd.delete 'stderr'
     vin = cmd.fetch('stdin', nil)
     cmd.delete 'stdin'
-    if cmd.length != 1
+    if cmd.size != 1
       $machine.set_error "Multiple interpreters: #{cmd.keys.sort.join(' ')}"
       return
     end
     interpreter = cmd.keys.first
     hashbangargs = cmd[cmd.keys.first]
     hashbangargs = hashbangargs.join(' ') if hashbangargs.is_a? Array
-    unless File.exist?(interpreter) and File.executable?(interpreter)
+    unless File.exist?(interpreter) && File.executable?(interpreter)
       $machine.set_error "Not found or not an executable: #{interpreter}"
       return
     end
@@ -765,11 +758,11 @@ class ShellCommand < Command
     begin
       temp.puts "#!#{interpreter} #{hashbangargs}"
       temp.puts script
-      temp.chmod(0700)
+      temp.chmod(0o700)
       temp.close
       argv.prepend temp.path
     rescue StandardError => e
-      $machine.set_error("Shell script prepare exception:\n#{e.to_s}")
+      $machine.set_error("Shell script prepare exception:\n#{e}")
       temp.close!
       return
     end
@@ -791,7 +784,7 @@ class ShellCommand < Command
       wait = nil
       $machine.set_error("Shell exit: #{exitcode}") if exitcode != 0
     rescue StandardError => e
-      $machine.set_error("Shell run exception:\n#{e.to_s}")
+      $machine.set_error("Shell run exception:\n#{e}")
     ensure
       stdin.close unless stdin.nil?
       rd_out.close unless rd_out.nil?
@@ -815,7 +808,7 @@ class RubyCommand < Command
     begin
       eval(script, $machine.get_binding)
     rescue StandardError => e
-      $machine.set_error "Eval failed: #{e.to_s}"
+      $machine.set_error "Eval failed: #{e}"
     end
   end
 end
@@ -827,9 +820,7 @@ $overwrites = []
 
 def add_states(states, new_states)
   new_states.each_pair do |name, state|
-    if states.has_key? name
-      $overwrites.push({ :state => name }.merge(state[:load]))
-    end
+    $overwrites.push({ state: name }.merge(state[:load])) if states.key? name
     states[name] = state
   end
 end
@@ -857,16 +848,16 @@ $built_ins = { '__setup' => %q(
 $first_state = nil
 
 def load_statefile(filename, current_directory, parent_includes = [])
-  if $built_ins.has_key? filename
+  if $built_ins.key? filename
     fullname = filename
-    contents = YAML.load($built_ins[filename])
+    contents = YAML.safe_load($built_ins[filename])
     directory = '(built-in)' # Built-in can include only another built-in.
   else
     begin
       fullname = File.realpath(filename, current_directory)
-      contents = YAML.load(File.read(fullname))
+      contents = YAML.safe_load(File.read(fullname))
       directory = File.dirname(fullname)
-    rescue Errno::ENOENT => e
+    rescue Errno::ENOENT
       userout "Could not find #{filename} from #{current_directory}"
       return nil
     rescue StandardError => e
@@ -886,11 +877,11 @@ def load_statefile(filename, current_directory, parent_includes = [])
   states = { }
   contents.each_index do |index|
     item = contents[index]
-    common = { :load => { :source => fullname, :index => index } }
+    common = { load: { source: fullname, index: index } }
     begin
       item.delete 'comment'
       [ 'global_signal2state', 'signal2state', 'label2signal' ].each do |shared|
-        next unless item.has_key? shared
+        next unless item.key? shared
         common[shared] = item[shared]
         item.delete shared
       end
@@ -904,7 +895,7 @@ def load_statefile(filename, current_directory, parent_includes = [])
       item.each_pair do |state, commands|
         if $first_state.nil?
           $first_state = state
-          if item.length != 1
+          if item.size != 1
             userout "First state mapping with multiple states is ambiguous: #{fullname} : #{index}"
             return nil
           end
@@ -927,7 +918,7 @@ def load_statefile(filename, current_directory, parent_includes = [])
       add_states(states, included)
     end
   end
-  return states
+  states
 end
 
 states = load_statefile('__setup', $root_dir)
@@ -938,48 +929,45 @@ ARGV.each do |filename|
   add_states(states, new_states)
 end
 
-if not $OVERWRITE_ACTION.nil? and not $overwrites.empty?
+if !$OVERWRITE_ACTION.nil? && !$overwrites.empty?
   $overwrites.each do |ow|
     userout "#{ow[:state]} replaced by #{ow[:source]} : #{ow[:index]}"
   end
   exit(4) if $OVERWRITE_ACTION == :error
 end
 
-unless states['__setup'].has_key? 'signal2state'
+unless states['__setup'].key? 'signal2state'
   states['__setup']['signal2state'] = { }
 end
-unless states['__setup']['signal2state'].has_key? nil
+unless states['__setup']['signal2state'].key? nil
   states['__setup']['signal2state'][nil] = $first_state
 end
-
 
 def label_signal_check(action, message, vars)
   case action.first
   when :stored
     l2s = $machine.label2signal
-    if l2s.has_key? vars.first
-      $machine.set_signal l2s[vars.first]
-    end
+    $machine.set_signal(l2s[vars.first]) if l2s.key? vars.first
   when :data_error then $machine.set_error(message.to_s)
   when :error then $machine.set_error(message.to_s)
   end
 end
-sig_check = Proc.new { |act, msg, vs| label_signal_check(act, msg, vs) }
+sig_check = proc { |act, msg, vs| label_signal_check(act, msg, vs) }
 
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
   # Seemingly running under datalackey.
   unless $PERMISSIONS.nil?
-    userout "Cannot give --permissions/-p unless running datalackey."
+    userout 'Cannot give --permissions/-p unless running datalackey.'
     exit 1
   end
-  if STDIN.tty?
-    userout "Not running under datalackey, turning on memory storage."
+  if $stdin.tty?
+    userout 'Not running under datalackey, turning on memory storage.'
     $MEMORY = true
   end
 end
 
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
-  $lackey_proc = DatalackeyParentProcess.new($CMDOUT, STDIN)
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
+  $lackey_proc = DatalackeyParentProcess.new($CMDOUT, $stdin)
   $lackey_stderr = DiscardReader.new($lackey_proc.stderr)
   $lackey = DatalackeyIO.new(
     $lackey_proc.stdin, $lackey_proc.stdout, sig_check)
@@ -995,23 +983,23 @@ else
     exit 1
   end
   $lackey_stderr = StoringReader.new($lackey_proc.stderr)
-  echo = $ECHO ? Proc.new { |json| userout json } : nil
-  $lackey = DatalackeyIO.new($lackey_proc.stdin, $lackey_proc.stdout,
-    sig_check, echo, echo)
+  echo = $ECHO ? proc { |json| userout json } : nil
+  $lackey = DatalackeyIO.new(
+    $lackey_proc.stdin, $lackey_proc.stdout, sig_check, echo, echo)
 end
 
 $machine.run('__setup', states)
 
 $lackey_proc.finish
 $lackey.close
-if $LACKEY.nil? and $MEMORY.nil? and $DIRECTORY.nil?
+if $LACKEY.nil? && $MEMORY.nil? && $DIRECTORY.nil?
   $lackey_proc.stdout.close
-  STDERR.close
+  $stderr.close
 end
 $lackey.finish
 $lackey_stderr.close
 userout $lackey_stderr.getlines
-if $lackey_proc.exit_code != 0 and not $lackey_proc.exit_code.nil?
+if !$lackey_proc.exit_code.zero? && !$lackey_proc.exit_code.nil?
   userout("datalackey exit: #{$lackey_proc.exit_code}")
 end
 exit $machine.variables.fetch('__exitcode', $machine.had_error ? 1 : 0)

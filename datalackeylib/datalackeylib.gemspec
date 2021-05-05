@@ -10,9 +10,9 @@ Requires separately installed datalackey executable, installed into
 
 Licensed under Universal Permissive License, see License.txt.
 )
-  s.authors     = [ "Ismo Kärkkäinen" ]
+  s.authors     = [ 'Ismo Kärkkäinen' ]
   s.email       = 'ismokarkkainen@icloud.com'
-  s.files       = [ "lib/datalackeylib.rb" ]
+  s.files       = [ 'lib/datalackeylib.rb' ]
   s.homepage    = 'http://rubygems.org/gems/datalackeylib'
   s.license     = 'Nonstandard'
   s.add_runtime_dependency 'json', '~> 2.1', '>= 2.1.0'

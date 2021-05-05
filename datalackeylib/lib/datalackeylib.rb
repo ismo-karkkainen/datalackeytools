@@ -1,4 +1,6 @@
+# frozen_string_literal: true
 
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'json'
@@ -12,9 +14,9 @@ class DatalackeyProcess
     if exe.nil?
       exe = DatalackeyProcess.locate_executable(
         'datalackey', [ '/usr/local/libexec', '/usr/libexec' ])
-      raise ArgumentError.new('datalackey not found') if exe.nil?
-    elsif not File.exist?(exe) or not File.executable?(exe)
-      raise ArgumentError.new("Executable not found or not executable: #{exe}")
+      raise ArgumentError, 'datalackey not found' if exe.nil?
+    elsif !File.exist?(exe) || !File.executable?(exe)
+      raise ArgumentError, "Executable not found or not executable: #{exe}"
     end
     @executable = exe
     args = [ exe,
@@ -41,23 +43,23 @@ def DatalackeyProcess.options_for_OptionParser(parser, separator,
     parser.separator separator
   end
   unless exe_callable.nil?
-    parser.on("-l", "--lackey PROGRAM", "Use specified datalackey executable.") do |e|
+    parser.on('-l', '--lackey PROGRAM', 'Use specified datalackey executable.') do |e|
       exe_callable.call(e)
     end
   end
   unless mem_callable.nil?
-    parser.on("-m", "--memory", "Store data in memory.") do
+    parser.on('-m', '--memory', 'Store data in memory.') do
       mem_callable.call(true)
     end
   end
   unless dir_callable.nil?
-    parser.on("-d", "--directory [DIR]", "Store data under (working) directory.") do |d|
+    parser.on('-d', '--directory [DIR]', 'Store data under (working) directory.') do |d|
       dir_callable.call(d || Dir.pwd)
     end
   end
   unless perm_callable.nil?
-    parser.on("-p", "--permissions MODE", [:user, :group, :other], "File permissions cover (user, group, other).") do |p|
-      perm_callable.call({ :user => "600", :group => "660", :other => "666" }[p])
+    parser.on('-p', '--permissions MODE', %i[user group other], 'File permissions cover (user, group, other).') do |p|
+      perm_callable.call({ user: '600', group: '660', other: '666' }[p])
     end
   end
   unless echo_callable.nil?
@@ -69,42 +71,42 @@ end
 
 def DatalackeyProcess.locate_executable(exe_name, dirs_outside_path = [])
   # Absolute file name or found in current working directory.
-  return exe_name if File.exist?(exe_name) and File.executable?(exe_name)
+  return exe_name if File.exist?(exe_name) && File.executable?(exe_name)
   dirs = []
   dirs_outside_path = [ dirs_outside_path ] unless dirs_outside_path.is_a? Array
   dirs.concat dirs_outside_path
   dirs.concat ENV['PATH'].split(File::PATH_SEPARATOR)
   dirs.each do |d|
     exe = File.join(d, exe_name)
-    return exe if File.exist?(exe) and File.executable?(exe)
+    return exe if File.exist?(exe) && File.executable?(exe)
   end
-  return nil
+  nil
 end
 
 def DatalackeyProcess.verify_directory_permissions_memory(
     directory, permissions, memory)
-  if not memory.nil? and not (directory.nil? and permissions.nil?)
-    raise ArgumentError.new "Cannot use both memory and directory/permissions."
+  if !memory.nil? && !(directory.nil? && permissions.nil?)
+    raise ArgumentError, 'Cannot use both memory and directory/permissions.'
   end
   if memory.nil?
     if directory.nil?
       directory = Dir.pwd
-    elsif not Dir.exist? directory
-      raise ArgumentError.new "Given directory does not exist: #{directory}"
+    elsif !Dir.exist? directory
+      raise ArgumentError, "Given directory does not exist: #{directory}"
     end
     if permissions.nil?
-      if (File.umask & 077) == 0
+      if (File.umask & 0o77).zero?
         permissions = '666'
-      elsif (File.umask & 070) == 0
+      elsif (File.umask & 0o70).zero?
         permissions = '660'
       else
         permissions = '600'
       end
-    elsif permissions != '600' and permissions != '660' and permissions != '666'
-      raise ArgumentError.new "Permissions not in {600, 660, 666}."
+    elsif permissions != '600' && permissions != '660' && permissions != '666'
+      raise ArgumentError, 'Permissions not in {600, 660, 666}.'
     end
   end
-  return directory, permissions, memory
+  [ directory, permissions, memory ]
 end
 
 
@@ -143,34 +145,33 @@ class NoPatternNoAction
     @identifier = identifier
   end
 
-  def best_match(message_array)
-    return [ nil, [] ]
+  def best_match(_)
+    [ nil, [] ]
   end
 end
 
 
 class PatternAction < NoPatternNoAction
-
   def initialize(action_maps_array, message_callables = [])
-    raise ArgumentError.new('action_maps_array is empty') unless action_maps_array.is_a?(Array) and action_maps_array.length > 0
+    raise ArgumentError, 'action_maps_array is empty' unless action_maps_array.is_a?(Array) && !action_maps_array.empty?
     super()
     @pattern2act = { }
     @fixed2act = { }
     @generators = message_callables.is_a?(Array) ? message_callables.clone : [ message_callables ]
     action_maps_array.each do |m|
-      raise ArgumentError.new('Action map is not a map.') unless m.is_a? Hash
+      raise ArgumentError, 'Action map is not a map.' unless m.is_a? Hash
       fill_pattern2action_maps([], m)
     end
-    @pattern2act.each_value { |acts| acts.uniq! }
-    @fixed2act.each_value { |acts| acts.uniq! }
-    raise ArgumentError.new('No patterns.') if @pattern2act.empty? and @fixed2act.empty?
+    @pattern2act.each_value(&:uniq!)
+    @fixed2act.each_value(&:uniq!)
+    raise ArgumentError, 'No patterns.' if @pattern2act.empty? && @fixed2act.empty?
   end
 
   def fill_pattern2action_maps(actionlist, item)
     if item.is_a? Array
-      unless item.first.is_a?(Array) or item.first.is_a?(Hash)
+      unless item.first.is_a?(Array) || item.first.is_a?(Hash)
         # item is a pattern.
-        raise ArgumentError.new("Pattern-array must be under action: #{item.to_s}") if actionlist.empty?
+        raise ArgumentError, "Pattern-array must be under action: #{item}" if actionlist.empty?
         wildcards = false
         pattern = [ :identifier ]
         item.each do |element|
@@ -186,7 +187,7 @@ class PatternAction < NoPatternNoAction
           end
         end
         tgt = wildcards ? @pattern2act : @fixed2act
-        tgt[pattern] = [] unless tgt.has_key? pattern
+        tgt[pattern] = [] unless tgt.key? pattern
         tgt[pattern].push actionlist
         return
       end
@@ -198,7 +199,7 @@ class PatternAction < NoPatternNoAction
         fill_pattern2action_maps(acts, sub)
       end
     else
-      raise ArgumentError.new('Item not a mapping, array, or pattern-array.')
+      raise ArgumentError, 'Item not a mapping, array, or pattern-array.'
     end
   end
 
@@ -208,7 +209,7 @@ class PatternAction < NoPatternNoAction
     copy = Marshal.load(Marshal.dump(self))
     @generators = gens
     copy.generators = gens.clone
-    return copy
+    copy
   end
 
   def replace_identifier(identifier, p2a)
@@ -218,7 +219,7 @@ class PatternAction < NoPatternNoAction
       pattern.each { |item| p.push(item == :identifier ? identifier : item) }
       altered[p] = a
     end
-    return altered
+    altered
   end
 
   def set_identifier(identifier)
@@ -228,13 +229,13 @@ class PatternAction < NoPatternNoAction
   end
 
   def best_match(message_array)
-    return [ @fixed2act[message_array], [] ] if @fixed2act.has_key? message_array
+    return [ @fixed2act[message_array], [] ] if @fixed2act.key? message_array
     best_length = 0
     best = nil
     best_vars = []
     @pattern2act.each_pair do |pattern, act|
       next if message_array.length + 1 < pattern.length
-      next if pattern.last != :rest and message_array.length != pattern.length
+      next if pattern.last != :rest && message_array.length != pattern.length
       length = 0
       exact_length = 0
       found = true
@@ -264,28 +265,27 @@ class PatternAction < NoPatternNoAction
         best_vars = vars
       end
     end
-    return best, best_vars
+    [ best, best_vars ]
   end
 end
 
 
 class DatalackeyIO
-
   @@internal_notification_map = {
-    :error => {
-      :user_id => [ 'error', 'identifier', '?' ],
-      :format => [ 'error', 'format' ]
+    error: {
+      user_id: [ 'error', 'identifier', '?' ],
+      format: [ 'error', 'format' ]
     },
-    :stored => [ 'data', 'stored', '?', '?' ],
-    :deleted => [ 'data', 'deleted', '?', '?' ],
-    :data_error => [ 'data', 'error', '?', '?' ],
-    :started => [ 'process', 'started', '?', '?' ],
-    :ended => [ 'process', 'ended', '?', '?' ]
+    stored: [ 'data', 'stored', '?', '?' ],
+    deleted: [ 'data', 'deleted', '?', '?' ],
+    data_error: [ 'data', 'error', '?', '?' ],
+    started: [ 'process', 'started', '?', '?' ],
+    ended: [ 'process', 'ended', '?', '?' ]
   }
 
   @@internal_generic_map = {
-    :error => {
-      :syntax => [
+    error: {
+      syntax: [
         [ 'error', 'missing', '*' ],
         [ 'error', 'not-string', '*' ],
         [ 'error', 'not-string-null', '*' ],
@@ -297,16 +297,16 @@ class DatalackeyIO
         [ 'error', 'command', 'unknown', '?' ]
       ]
     },
-    :done => [ 'done', "" ],
-    :child => [ 'run', 'running', '?' ]
+    done: [ 'done', '' ],
+    child: [ 'run', 'running', '?' ]
   }
 
   def self.internal_notification_map
-    return Marshal.load(Marshal.dump(@@internal_notification_map))
+    Marshal.load(Marshal.dump(@@internal_notification_map))
   end
 
   def self.internal_generic_map
-    return Marshal.load(Marshal.dump(@@internal_generic_map))
+    Marshal.load(Marshal.dump(@@internal_generic_map))
   end
 
   attr_reader :syntax, :version
@@ -334,7 +334,7 @@ class DatalackeyIO
     @version = { }
     @read_datalackey = Thread.new do
       accum = []
-      while true do
+      loop do
         begin
           raw = @from_datalackey.readpartial(32768)
         rescue IOError
@@ -343,9 +343,9 @@ class DatalackeyIO
           break
         end
         loc = raw.index("\n")
-        until loc.nil? do
-          accum.push(raw[0, loc]) if loc > 0 # Newline at start ends line.
-          raw = raw[loc + 1, raw.length - loc - 1]
+        until loc.nil?
+          accum.push(raw[0, loc]) if loc.positive? # Newline at start ends line.
+          raw = raw[loc + 1, raw.size - loc - 1]
           loc = raw.index("\n")
           joined = accum.join
           accum.clear
@@ -375,7 +375,7 @@ class DatalackeyIO
               end
             when :deleted
               @dataprocess_mutex.synchronize do
-                if @data.has_key?(name) and @data[name] <= id
+                if @data.key?(name) && @data[name] <= id
                   @data.delete name
                   actionable = act
                 end
@@ -406,7 +406,7 @@ class DatalackeyIO
                   begin
                     int = Integer(@waiting)
                     fract = @waiting - int
-                    raise ArgumentError.new() unless fract == 0
+                    raise ArgumentError, '' unless fract.zero?
                   rescue ArgumentError, TypeError
                     unless @waiting.is_a? String
                       @tracked_mutex.synchronize do
@@ -423,7 +423,7 @@ class DatalackeyIO
               end
               actionable = act
             end
-            next if notification_callable.nil? or actionable.nil?
+            next if notification_callable.nil? || actionable.nil?
             notification_callable.call(actionable, msg, vars)
             next
           end
@@ -462,8 +462,7 @@ class DatalackeyIO
               finish = true
               if act.first == :done
                 @tracked_mutex.synchronize { @tracked.delete(msg[0]) }
-              end
-              if act.first == :error
+              elsif act.first == :error
                 last = [ act ]
               end
             end
@@ -475,14 +474,14 @@ class DatalackeyIO
             @return_mutex.synchronize { @return_condition.signal }
           end
         end
-        accum.push(raw) if raw.length > 0
+        accum.push(raw) unless raw.empty?
       end
       @from_datalackey.close
       @return_mutex.synchronize { @return_condition.signal }
     end
     # Outside thread block.
-    send(PatternAction.new([{ :version => [ 'version', "", '?' ] }], [
-      Proc.new do |action, message, vars|
+    send(PatternAction.new([{ version: [ 'version', '', '?' ] }], [
+      proc do |action, message, vars|
         if action.first == :version
           @syntax = vars.first['commands']
           @version = { }
@@ -509,7 +508,7 @@ class DatalackeyIO
   end
 
   def closed?
-    return @from_datalackey.closed?
+    @from_datalackey.closed?
   end
 
   def close
@@ -545,26 +544,24 @@ class DatalackeyIO
     tracker.status = true
     unless tracker.exit.nil?
       tracker.exit.each do |item|
-        tracker.status = false if item.first == :error or item.first == 'error'
+        tracker.status = false if item.first == :error || item.first == 'error'
       end
     end
-    return tracker
+    tracker
   end
 
   def dump(json_as_string)
     @to_datalackey_mutex.synchronize do
-      begin
-        @to_datalackey.write json_as_string
-        @to_datalackey.flush
-        @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
-      rescue Errno::EPIPE
-      end
+      @to_datalackey.write json_as_string
+      @to_datalackey.flush
+      @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
+    rescue Errno::EPIPE
+      # Should do something in this case. Child process died?
     end
   end
 
   def verify(command)
-    return nil if @syntax.nil?
-    return true
+    @syntax.nil? ? nil : true
   end
 end
 
@@ -576,7 +573,7 @@ class StoringReader
     @output = [] # Contains list of lines from input.
     @reader = Thread.new do
       accum = []
-      while true do
+      loop do
         begin
           raw = @input.readpartial(32768)
         rescue IOError
@@ -585,18 +582,16 @@ class StoringReader
           break
         end
         loc = raw.index("\n")
-        until loc.nil? do
-          accum.push(raw[0, loc]) if loc > 0 # Newline begins?
-          if accum.length
-            @output_mutex.synchronize {
-              @output.push(accum.join) if accum.length
-            }
+        until loc.nil?
+          accum.push(raw[0, loc]) if loc.positive? # Newline begins?
+          unless accum.empty?
+            @output_mutex.synchronize { @output.push(accum.join) }
             accum.clear
           end
-          raw = raw[loc + 1, raw.length - loc - 1]
+          raw = raw[loc + 1, raw.size - loc - 1]
           loc = raw.index("\n")
         end
-        accum.push(raw) if raw.length > 0
+        accum.push(raw) unless raw.empty?
       end
     end
   end
@@ -621,14 +616,12 @@ class DiscardReader
     @input = input
     return if input.nil?
     @reader = Thread.new do
-      while true do
-        begin
-          @input.readpartial(32768)
-        rescue IOError
-          break # It is possible that close happens in another thread.
-        rescue EOFError
-          break
-        end
+      loop do
+        @input.readpartial(32768)
+      rescue IOError
+        break # It is possible that close happens in another thread.
+      rescue EOFError
+        break
       end
     end
   end
@@ -640,6 +633,6 @@ class DiscardReader
   end
 
   def getlines
-    return []
+    []
   end
 end

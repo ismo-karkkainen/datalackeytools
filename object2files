@@ -1,27 +1,31 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# Copyright 2019 Ismo Kärkkäinen
+# Copyright © 2019-2021 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See License.txt.
 
 require 'json'
 require 'pathname'
 
-if ARGV.length > 0 and ARGV.length % 2 != 0
-  STDERR.puts %q(Usage: object2files [key filename ...]
+def aargh(message, exit_code)
+  $stderr.puts message
+  exit exit_code
+end
+
+if !ARGV.empty? && ARGV.size.odd?
+  aargh %q(Usage: object2files [key filename ...]
   Saves each key:value pair value in input JSON object to file.
   File name is either taken from arguments, or key is used as is.
   Directories are created if filename seems to contain them.
-  Unused key/filename argument pairs are ignored.)
-  exit 1
+  Unused key/filename argument pairs are ignored.), 1
 end
 
 map = ARGV.empty? ? {} : Hash[ARGV.each_slice(2).to_a]
 
 begin
-  obj = JSON.parse(STDIN.read)
+  obj = JSON.parse($stdin.read)
 rescue JSON::ParserError
-  STDERR.puts "Error parsing input."
-  exit 2
+  aargh 'Error parsing input.', 2
 end
 
 obj.each_pair do |key, value|
@@ -31,15 +35,13 @@ obj.each_pair do |key, value|
   begin
     dn.mkpath
   rescue Errno::EEXIST
-    STDERR.puts "Failed to create key #{key} path in #{file}"
-    exit 3
+    aargh "Failed to create key #{key} path in #{file}", 3
   end
   begin
     fp.open('w') do |f|
       f.write value.to_json
     end
   rescue Errno::EACCES, Errno::ENOTDIR, Errno::ENOENT
-    STDERR.puts "Failed to write key #{key} to #{file}"
-    exit 3
+    aargh "Failed to write key #{key} to #{file}", 3
   end
 end
