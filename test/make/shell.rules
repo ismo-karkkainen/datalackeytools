@@ -9,6 +9,7 @@
       echo "To stdout"
       echo "To stderr" >&2
       echo $*
+      sleep 1
       exit 0
   - argv: [ arg1, arg2 ]
     stdout: stdout-receiving-variable
@@ -31,5 +32,6 @@
       echo "To stdout"
       echo "To stderr" >&2
       echo $*
+      sleep 1
       exit 1
   - print We never get here because of exit code.
