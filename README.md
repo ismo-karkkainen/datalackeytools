@@ -1,32 +1,20 @@
-# Overview
+# datalackeytools
 
 The datalackey-prefixed commands here are intended to be run instead of
 running datalackey directly. Datalackey is intended to be a dumb process
 that just stores your data, and other progrems are meant to control it.
 I refer to these as controllers.
 
-- datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
 - datalackey-state is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts. State transitions allow the use of loops.
 - datalackey-make is intended for performing a task after all dependencies have been fulfilled.
 - datalackey-run is helper tool that takes care of running datalackey and your controller program as child process of datalackey, freeing your controller to deal only with communicating with datalackey.
 - files2object and object2files are simple alternative to datalackey. files2object outputs file contents with given names that is the same as what datalackey outputs to program it runs, given input data. object2files does the reverse, performing what datalackey does to program output. Potentially helpful in debugging a program to be run using datalackey. Potentially all you need when your needs are simple.
+- datalackey-shell is a shell intended to make issuing datalackey commands a bit easier. The imagined use is you can tinker with various programs with this and leave repetitive tasks to other tools.
 
 You must specify the storage options. Each of these requires either
 memory or directory storage be specified. Memory storage requires that all
 data fits in main memory at once. Directory storage allows you to shut things
 down and return later and still have what you were working on remain as it was.
-
-# Shell
-
-The datalackey-shell is intended to allow you to issue commands to datalackey
-interactively, rather than typing JSON-encoded arrays. That is basically all
-it does. If you need to write scripts that would issue commands and wait for
-outcomes, see datalackey-state. Consequently there are no control statements
-such as loops or conditional statements.
-
-One benefit of the shell is that by setting echoing of input to datalackey and
-datalackey output to controller, you can see how communication with datalackey
-proceeds, which is no doubt helpful when you need to write your own controller.
 
 # State
 
@@ -95,6 +83,22 @@ can communicate with datalackey. Your controller to be run under datalackey
 will in this case get datalackey output via stdin and stdout is sent to
 datalackey.
 
+# Shell
+
+The datalackey-shell is intended to allow you to issue commands to datalackey
+interactively, rather than typing JSON-encoded arrays. That is basically all
+it does. If you need to write scripts that would issue commands and wait for
+outcomes, see datalackey-state. Consequently there are no control statements
+such as loops or conditional statements.
+
+One benefit of the shell is that by setting echoing of input to datalackey and
+datalackey output to controller, you can see how communication with datalackey
+proceeds, which is no doubt helpful when you need to write your own controller.
+
+This was the first tool for controlling datalackey and while it has its merits,
+namely the ease of seeing the traffic between controller and datalackey, it is
+not really useful for anything else.
+
 # Helper gem
 
 The datalackeylib is a simple gem that simplifies mapping datalackey output
@@ -112,6 +116,12 @@ datalackey output (see output of datalackey -m --report commands) to
 action you can then use in conditional statement to act accordingly.
 DatalackeyIO also keeps track of processes and data by tracking notifications.
 
+# Requirements
+
+Datalackey executable must be available. Originally this was written for Ruby
+2.6 but at the moment tests are run on whatever version of ruby is available
+on each platform.
+
 # Testing
 
 You need to build, test and install the gem before other tests. In short:
@@ -123,7 +133,7 @@ You need to build, test and install the gem before other tests. In short:
     sudo rake install
 
 To run a sub-set of tests run test.sh with argument state, make, mapped, or run.
-THey correspond to scripts in test directory.
+They correspond to scripts in test directory.
 
 To run an individual test, the tests print exit code and the command, so you
 can copy the command and prefix "./" to program name and "test/" to the file
