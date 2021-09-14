@@ -1,7 +1,7 @@
 #!/bin/sh
 
 STATE=
-D="datalackey-state"
+D="bin/datalackey-state"
 for C in $1 $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D
 do
     if [ -x $C ]; then
@@ -18,7 +18,7 @@ if [ "$1" = "$STATE" ]; then
 fi
 
 RUN=
-D="datalackey-run"
+D="bin/datalackey-run"
 for C in $1 $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D
 do
     if [ -x $C ]; then

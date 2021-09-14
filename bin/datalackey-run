@@ -10,7 +10,7 @@
 
 require 'optparse'
 require 'json'
-require 'datalackeylib'
+require '../lib/datalackeylib'
 
 # Argument handling and checking
 

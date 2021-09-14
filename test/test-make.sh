@@ -1,7 +1,7 @@
 #!/bin/sh
 
 MAKE=
-D="datalackey-make"
+D="bin/datalackey-make"
 for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
 do
     if [ -x $C ]; then

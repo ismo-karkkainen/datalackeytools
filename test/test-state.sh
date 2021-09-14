@@ -1,7 +1,7 @@
 #!/bin/sh
 
 STATE=
-D="datalackey-state"
+D="bin/datalackey-state"
 for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
 do
     if [ -x $C ]; then

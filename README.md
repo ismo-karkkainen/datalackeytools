@@ -99,10 +99,10 @@ This was the first tool for controlling datalackey and while it has its merits,
 namely the ease of seeing the traffic between controller and datalackey, it is
 not really useful for anything else.
 
-# Helper gem
+# Helper library
 
-The datalackeylib is a simple gem that simplifies mapping datalackey output
-to something that needs to be done, allows sending stuff to datalackey,
+The datalackeytools/lib is a simple library that simplifies mapping datalackey
+output to something that needs to be done, allows sending stuff to datalackey,
 and handles running the datalackey process, if desired. A few convenience
 methods are also present.
 
@@ -124,29 +124,26 @@ on each platform.
 
 # Testing
 
-You need to build, test and install the gem before other tests. In short:
+In short (install using sudo if needed):
 
-    rake build
-    rake testgem
-    sudo rake installgem
     rake test
-    sudo rake install
+    rake build
+    rake install
 
-To run a sub-set of tests run test.sh with argument state, make, mapped, or run.
-They correspond to scripts in test directory.
+To run a sub-set of tests see the output of rake --tasks
 
 To run an individual test, the tests print exit code and the command, so you
-can copy the command and prefix "./" to program name and "test/" to the file
+can copy the command and prefix "bin/" to program name and "test/" to the file
 name argument. For example, the output line:
 
     0 datalackey-state -m --stderr -f 4 state/launch-terminate.state
 
 Corresponds to command:
 
-    ./datalackey-state -m --stderr -f 4 test/state/launch-terminate.state
+    bin/datalackey-state -m --stderr -f 4 test/state/launch-terminate.state
 
 # License
 
 Copyright © 2019-2021 Ismo Kärkkäinen
 
-Licensed under Universal Permissive License. See License.txt.
+Licensed under Universal Permissive License. See LICENSE.txt.

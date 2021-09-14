@@ -2,36 +2,26 @@
 
 task default: [:install]
 
-desc 'Install programs to PREFIX/bin.'
-task install: [:installgem] do
-  prefix = ENV.fetch('PREFIX', '/usr/local')
-  target = File.join(prefix, 'bin')
-  puts "Using PREFIX #{prefix} to install to #{target}."
-  abort("Target #{target} is not a directory.") unless File.directory? target
-  %w[datalackey-state datalackey-make datalackey-run datalackey-shell files2object object2files].each do |exe|
-    puts "Installing #{exe}."
-    `sudo install #{exe} #{prefix}/bin/`
-  end
-end
-
 desc 'Clean.'
 task :clean do
-  `rm -f datalackeylib/datalackeylib*.gem`
+  `rm -f datalackeytools-*.gem`
 end
 
 desc 'Build gem.'
 task build: [:clean] do
-  Dir.chdir('datalackeylib') { `rake build` }
+  `gem build datalackeytools.gemspec`
 end
 
 desc 'Build and install gem.'
-task installgem: [:build] do
-  Dir.chdir('datalackeylib') { `rake install` }
+task install: [:build] do
+  `gem install datalackeytools-*.gem`
 end
 
-desc 'Test gem.'
+desc 'Test gem library.'
 task :testgem do
-  Dir.chdir('datalackeylib') { `rake test` }
+  sh 'test/test_process'
+  sh 'test/test_patternaction'
+  sh 'test/test_io'
 end
 
 desc 'Test.'

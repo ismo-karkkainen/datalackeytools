@@ -1,7 +1,7 @@
 #!/bin/sh
 
 F2O=
-D="files2object"
+D="bin/files2object"
 for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
 do
     if [ -x $C ]; then
@@ -18,7 +18,7 @@ if [ "$1" = "$F2O" ]; then
 fi
 
 O2F=
-D="object2files"
+D="bin/object2files"
 for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
 do
     if [ -x $C ]; then
