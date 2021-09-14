@@ -16,7 +16,4 @@ make -j 3 >/dev/null
 sudo make install >/dev/null
 cd ..
 cd $1
-rake build
-rake testgem
-sudo rake install
 rake test
