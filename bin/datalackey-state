@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # Copyright © 2019-2021 Ismo Kärkkäinen
-# Licensed under Universal Permissive License. See License.txt.
+# Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'optparse'
 require 'yaml'

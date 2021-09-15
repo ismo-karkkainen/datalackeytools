@@ -8,12 +8,12 @@ task :clean do
 end
 
 desc 'Build gem.'
-task build: [:clean] do
+task gem: [:clean] do
   `gem build datalackeytools.gemspec`
 end
 
 desc 'Build and install gem.'
-task install: [:build] do
+task install: [:gem] do
   `gem install datalackeytools-*.gem`
 end
 

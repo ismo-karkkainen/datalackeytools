@@ -1,18 +1,23 @@
 Gem::Specification.new do |s|
   s.name        = 'datalackeytools'
-  s.version     = '0.3.0'
-  s.date        = '2021-09-14'
+  s.version     = '0.3.1'
+  s.date        = '2021-09-15'
   s.summary     = "Tools for using datalackey."
-  s.description = %q(
-Tools for using datalackey.
-Requires separately installed datalackey executable, installed into
+  s.description = %q(Tools for using datalackey.
+
+For examples of use, see https://github.com/ismo-karkkainen/datalackeytools
+directory examples.
+
+Requires separate datalackey executable installed into
 /usr/local/libexec, /usr/libexec, or into a directory in $PATH.
 
-Licensed under Universal Permissive License, see License.txt.
+Datalackey: https://github.com/ismo-karkkainen/datalackey
+
+Licensed under Universal Permissive License, see LICENSE.txt.
 )
   s.authors     = [ 'Ismo Kärkkäinen' ]
   s.email       = 'ismokarkkainen@icloud.com'
-  s.files       = [ 'lib/datalackeylib.rb' ]
+  s.files       = [ 'LICENSE.txt', 'lib/datalackeylib.rb' ]
   s.executables << 'datalackey-make'
   s.executables << 'datalackey-run'
   s.executables << 'datalackey-shell'

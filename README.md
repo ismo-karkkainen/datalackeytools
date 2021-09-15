@@ -127,7 +127,7 @@ on each platform.
 In short (install using sudo if needed):
 
     rake test
-    rake build
+    rake gem
     rake install
 
 To run a sub-set of tests see the output of rake --tasks
