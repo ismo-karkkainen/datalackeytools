@@ -1,39 +1,7 @@
 #!/bin/sh
 
-STATE=
-D="bin/datalackey-state"
-for C in $1 $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D
-do
-    if [ -x $C ]; then
-        STATE=$C
-        break
-    fi
-done
-if [ -z "$STATE" ]; then
-    echo "datalackey-state not found, pass it as first parameter."
-    exit 1
-fi
-if [ "$1" = "$STATE" ]; then
-    shift
-fi
-
-RUN=
-D="bin/datalackey-run"
-for C in $1 $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D
-do
-    if [ -x $C ]; then
-        RUN=$C
-        break
-    fi
-done
-if [ -z "$RUN" ]; then
-    echo "datalackey-run not found, pass it as first or second parameter."
-    exit 1
-fi
-if [ "$1" = "$RUN" ]; then
-    shift
-fi
-
+STATE="../bin/datalackey-state"
+RUN="../bin/datalackey-run"
 
 trap cleanup 1 2 3 6 15
 

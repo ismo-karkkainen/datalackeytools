@@ -1,3 +1,4 @@
-*.res
 *.out
 *.err
+a*
+ba*

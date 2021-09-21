@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name        = 'datalackeytools'
-  s.version     = '0.3.2'
-  s.date        = '2021-09-15'
+  s.version     = '0.3.3'
+  s.date        = '2021-09-21'
   s.summary     = "Tools for using datalackey."
   s.description = %q(Tools for using datalackey.
 
@@ -17,7 +17,7 @@ Licensed under Universal Permissive License, see LICENSE.txt.
 )
   s.authors     = [ 'Ismo Kärkkäinen' ]
   s.email       = 'ismokarkkainen@icloud.com'
-  s.files       = [ 'LICENSE.txt', 'lib/datalackeylib.rb' ]
+  s.files       = [ 'LICENSE.txt', 'lib/common.rb', 'lib/datalackeylib.rb' ]
   s.executables << 'datalackey-make'
   s.executables << 'datalackey-run'
   s.executables << 'datalackey-shell'

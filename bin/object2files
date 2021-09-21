@@ -6,11 +6,8 @@
 
 require 'json'
 require 'pathname'
+require '../lib/common'
 
-def aargh(message, exit_code)
-  $stderr.puts message
-  exit exit_code
-end
 
 if !ARGV.empty? && ARGV.size.odd?
   aargh %q(Usage: object2files [key filename ...]

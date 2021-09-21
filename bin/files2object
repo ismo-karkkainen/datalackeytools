@@ -5,11 +5,8 @@
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'pathname'
+require '../lib/common'
 
-def aargh(message, exit_code)
-  $stderr.puts message
-  exit exit_code
-end
 
 def usage
   aargh %q(Usage: files2object [--wait|-w] [key filename ...]

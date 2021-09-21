@@ -8,18 +8,15 @@
 # datalackey process
 # Main loop
 
+require '../lib/common'
+require '../lib/datalackeylib'
 require 'optparse'
 require 'json'
-require '../lib/datalackeylib'
+
 
 # Argument handling and checking
 
 ENV['POSIXLY_CORRECT'] = '1'
-
-def aargh(message, exit_code = nil)
-  $stderr.puts message
-  exit exit_code unless exit_code.nil?
-end
 
 class Arguments
   attr_reader :directory, :memory, :lackey, :permissions, :terminate_delay, :echo

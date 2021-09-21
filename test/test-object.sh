@@ -1,38 +1,7 @@
 #!/bin/sh
 
-F2O=
-D="bin/files2object"
-for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
-do
-    if [ -x $C ]; then
-        F2O=$C
-        break
-    fi
-done
-if [ -z "$F2O" ]; then
-    echo "files2object not found, pass it as first parameter."
-    exit 1
-fi
-if [ "$1" = "$F2O" ]; then
-    shift
-fi
-
-O2F=
-D="bin/object2files"
-for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
-do
-    if [ -x $C ]; then
-        O2F=$C
-        break
-    fi
-done
-if [ -z "$O2F" ]; then
-    echo "object2files not found, pass it as first/second parameter."
-    exit 1
-fi
-if [ "$1" = "$O2F" ]; then
-    shift
-fi
+F2O="../bin/files2object"
+O2F="../bin/object2files"
 
 trap cleanup 1 2 3 6 15
 
@@ -66,9 +35,9 @@ else
 EOF
 fi
 
-cd object
+cd ../test_object
 rm -f a* b*
-RESULTS="../$(basename $0 .sh).res"
+RESULTS="../test/$(basename $0 .sh).res"
 rm -f $RESULTS
 
 cat $CMDS |

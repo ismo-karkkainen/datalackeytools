@@ -1,21 +1,6 @@
 #!/bin/sh
 
-MAKE=
-D="bin/datalackey-make"
-for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
-do
-    if [ -x $C ]; then
-        MAKE=$C
-        break
-    fi
-done
-if [ -z "$MAKE" ]; then
-    echo "datalackey-make not found, pass it as first parameter."
-    exit 1
-fi
-if [ "$1" = "$MAKE" ]; then
-    shift
-fi
+MAKE="../bin/datalackey-make"
 
 trap cleanup 1 2 3 6 15
 

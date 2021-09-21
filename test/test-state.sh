@@ -1,21 +1,6 @@
 #!/bin/sh
 
-STATE=
-D="bin/datalackey-state"
-for C in $(pwd)/$D $(pwd)/../$D $(pwd)/../../$D $1
-do
-    if [ -x $C ]; then
-        STATE=$C
-        break
-    fi
-done
-if [ -z "$STATE" ]; then
-    echo "datalackey-state not found, pass it as first parameter."
-    exit 1
-fi
-if [ "$1" = "$STATE" ]; then
-    shift
-fi
+STATE="../bin/datalackey-state"
 
 trap cleanup 1 2 3 6 15
 
