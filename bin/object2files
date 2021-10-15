@@ -6,7 +6,7 @@
 
 require 'json'
 require 'pathname'
-require '../lib/common'
+require_relative '../lib/common'
 
 
 if !ARGV.empty? && ARGV.size.odd?

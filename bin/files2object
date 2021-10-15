@@ -5,7 +5,7 @@
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'pathname'
-require '../lib/common'
+require_relative '../lib/common'
 
 
 def usage

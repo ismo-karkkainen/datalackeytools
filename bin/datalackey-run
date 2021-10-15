@@ -8,8 +8,8 @@
 # datalackey process
 # Main loop
 
-require '../lib/common'
-require '../lib/datalackeylib'
+require_relative '../lib/common'
+require_relative '../lib/datalackeylib'
 require 'optparse'
 require 'json'
 

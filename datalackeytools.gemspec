@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name        = 'datalackeytools'
-  s.version     = '0.3.3'
-  s.date        = '2021-09-21'
+  s.version     = '0.3.4'
+  s.date        = '2021-10-15'
   s.summary     = "Tools for using datalackey."
   s.description = %q(Tools for using datalackey.
 
@@ -24,6 +24,6 @@ Licensed under Universal Permissive License, see LICENSE.txt.
   s.executables << 'datalackey-state'
   s.executables << 'files2object'
   s.executables << 'object2files'
-  s.homepage    = 'http://rubygems.org/gems/datalackeytools'
+  s.homepage    = 'https://xn--ismo-krkkinen-gfbd.fi/datalackeytools/index.html'
   s.license     = 'UPL-1.0'
 end
