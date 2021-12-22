@@ -1,8 +1,8 @@
 # datalackeytools
 
-The datalackey-prefixed commands here are intended to be run instead of
-running datalackey directly. Datalackey is intended to be a dumb process
-that just stores your data, and other progrems are meant to control it.
+The datalackey-prefixed commands in datalackeytools Ruby gem are intended
+to be used instead of running datalackey directly. Datalackey is a dumb process
+that just stores your data, and other programs control it.
 I refer to these as controllers.
 
 - datalackey-state is intended for performing a well-known task that you specify from start to end. You could run it from within datalackey-shell and have it perform repetitive parts. State transitions allow the use of loops.

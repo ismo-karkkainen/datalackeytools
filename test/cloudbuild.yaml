@@ -1,0 +1,34 @@
+steps:
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  entrypoint: "sh"
+  args:
+  - "-c"
+  - "mkdir _logs && cp README.md _logs && cd _logs && git log -1 --format='%H' > commit.txt && git log -1 --format='%H %cI %s' > info.txt"
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  entrypoint: "git"
+  args: [ "clone", "--branch", "master", "--depth", "1", "https://github.com/ismo-karkkainen/datalackey.git" ]
+- name: "$_REPO/debian:latest"
+  entrypoint: "sh"
+  args: [ "-c", "$$PWD/test/datalackey.sh $$PWD" ]
+- name: "$_REPO/debian-ruby-2.7:latest"
+  entrypoint: "sh"
+  args: [ "-c", "$$PWD/test/cloudbuild.sh Debian $$PWD" ]
+- name: "$_REPO/debian-ruby-3.0:latest"
+  entrypoint: "sh"
+  args: [ "-c", "$$PWD/test/cloudbuild.sh Debian $$PWD" ]
+- name: "$_REPO/debian-ruby-3.1:latest"
+  entrypoint: "sh"
+  args: [ "-c", "$$PWD/test/cloudbuild.sh Debian $$PWD" ]
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  entrypoint: "tar"
+  args:
+  - "-cvzf"
+  - "datalackeytools.tgz"
+  - "_logs"
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  entrypoint: "gsutil"
+  args:
+  - "cp"
+  - "datalackeytools.tgz"
+  - "gs://$_LOGS/datalackeytools.tgz"
+timeout: "900s"
