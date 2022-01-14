@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: false
 
-# Copyright © 2019-2021 Ismo Kärkkäinen
+# Copyright © 2019-2022 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 # Argument handling and checking
@@ -161,24 +161,23 @@ run_pa = PatternAction.new([ run_actions ],
 # Run the program that was given in the command-line.
 cmd = [ "datalackey-run-#{Process.pid}", 'run',
   'in', 'JSON', 'stdin', 'out', 'JSON', 'stdout', 'out', 'bytes', 'stderr',
-  'notify', 'data', 'notify', 'process', 'program'
-]
+  'notify', 'data', 'notify', 'process', 'program' ]
 cmd.concat ARGV
 $lackey.send(run_pa, cmd, true)
 
 # Main loop
 
 def get_output
-  unless $quitting
+  if $quitting
+    result = $output
+    $output = []
+    result
+  else
     $output_mutex.synchronize do
       result = $output
       $output = []
       return result
     end
-  else
-    result = $output
-    $output = []
-    return result
   end
 end
 

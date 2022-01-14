@@ -1,0 +1,99 @@
+AllCops:
+  NewCops: enable
+
+Layout/ArgumentAlignment:
+  Enabled: false
+Layout/ArrayAlignment:
+  Enabled: false
+Layout/EmptyLineAfterGuardClause:
+  Enabled: false
+Layout/EmptyLineBetweenDefs:
+  NumberOfEmptyLines: [ 1, 2 ]
+Layout/EmptyLines:
+  Enabled: false
+Layout/FirstArrayElementIndentation:
+  Enabled: false
+Layout/FirstParameterIndentation:
+  Enabled: false
+Layout/LineLength:
+  Enabled: false
+Layout/MultilineArrayBraceLayout:
+  Enabled: false
+Layout/MultilineMethodCallBraceLayout:
+  Enabled: false
+Layout/MultilineMethodDefinitionBraceLayout:
+  Enabled: false
+Layout/ParameterAlignment:
+  Enabled: false
+Layout/SpaceInsideArrayLiteralBrackets:
+  Enabled: false
+
+#Lint/UnusedBlockArgument:
+#  Enabled: false
+Lint/NonLocalExitFromIterator:
+  Enabled: false
+Lint/ShadowedException:
+  Enabled: false
+Lint/ShadowingOuterLocalVariable:
+  Enabled: false
+Lint/SuppressedException:
+  Enabled: false
+
+Metrics/AbcSize:
+  Enabled: false
+Metrics/BlockLength:
+  Enabled: false
+Metrics/BlockNesting:
+  Enabled: false
+Metrics/ClassLength:
+  Enabled: false
+Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/MethodLength:
+  Enabled: false
+Metrics/ParameterLists:
+  Enabled: false
+Metrics/PerceivedComplexity:
+  Enabled: false
+
+Naming/AccessorMethodName:
+  Enabled: false
+Naming/MethodName:
+  Enabled: false
+Naming/MethodParameterName:
+  Enabled: false
+
+Security/Eval:
+  Enabled: false
+
+Style/CaseLikeIf:
+  Enabled: false
+Style/ClassVars:
+  Enabled: false
+Style/CommentedKeyword:
+  Enabled: false
+Style/ConditionalAssignment:
+  Enabled: false
+Style/GlobalVars:
+  Enabled: false
+Style/GuardClause:
+  Enabled: false
+Style/IfUnlessModifier:
+  Enabled: false
+Style/NumericLiterals:
+  Enabled: false
+Style/OptionalBooleanParameter:
+  Enabled: false
+Style/RedundantPercentQ:
+  Enabled: false
+Style/SoleNestedConditional:
+  Enabled: false
+Style/StderrPuts:
+  Enabled: false
+Style/WordArray:
+  Enabled: false
+Style/YodaCondition:
+  Enabled: false
+
+Style/Documentation:
+  Enabled: false

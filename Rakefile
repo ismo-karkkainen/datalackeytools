@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'rubocop/rake_task'
+
 task default: [:install]
 
 desc 'Clean.'
@@ -47,4 +49,9 @@ desc 'Test file io.'
 task testio: [] do
   sh './test.sh io'
   sh './test.sh object'
+end
+
+desc 'Lint using Rubocop'
+RuboCop::RakeTask.new(:lint) do |t|
+  t.patterns = [ 'bin/datalackey-make', 'bin/datalackey-run', 'bin/datalackey-state', 'bin/files2object', 'bin/object2files', 'lib', 'datalackeytools.gemspec' ]
 end

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Copyright © 2019-2021 Ismo Kärkkäinen
+# Copyright © 2019-2022 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'optparse'
@@ -76,16 +76,16 @@ parser.parse!
 begin
   $TERMINATE_DELAY = Float($TERMINATE_DELAY)
 rescue ArgumentError
-  $USEROUT.puts "Terminate delay not a number."
+  $USEROUT.puts 'Terminate delay not a number.'
   exit 1
 end
 if $TERMINATE_DELAY < 0
-  $USEROUT.puts "Terminate delay less than 0."
+  $USEROUT.puts 'Terminate delay less than 0.'
   exit 1
 end
 
 if ARGV.empty?
-  $USEROUT.puts "No targets."
+  $USEROUT.puts 'No targets.'
   exit 1
 end
 
@@ -115,9 +115,9 @@ def load_rulefile(filename, current_directory, parent_includes = [])
       userout "Include loop: #{filename} from #{current_directory}"
       return nil
     end
-    contents = YAML.load(File.read(fullname))
+    contents = YAML.safe_load(File.read(fullname))
     directory = File.dirname(fullname)
-  rescue Errno::ENOENT => e
+  rescue Errno::ENOENT
     userout "Could not find #{filename} from #{current_directory}"
     return nil
   rescue StandardError => e
@@ -153,14 +153,14 @@ def load_rulefile(filename, current_directory, parent_includes = [])
     cmds = [ cmds ] if cmds.is_a? String
     cmds = [] if cmds.nil?
     cmds.each_index do |k|
-      cmds[k] = cmds[k].split(' ') if cmds[k].is_a? String
+      cmds[k] = cmds[k].split if cmds[k].is_a? String
     end
-    common = { :load => { :source => fullname, :index => index } }
+    common = { load: { source: fullname, index: index } }
     common[:commands] = cmds
     # Separate each target/requirements while keeping common parts.
     item.each_pair do |target, requirements|
       unless target.is_a? String
-        userout "Target #{target.to_s} is not a string: #{fileline(fullname, index)}"
+        userout "Target #{target} is not a string: #{fileline(fullname, index)}"
         return nil
       end
       requirements = [] if requirements.nil?
@@ -169,7 +169,7 @@ def load_rulefile(filename, current_directory, parent_includes = [])
         requirements.each_index do |n|
           req = requirements[n]
           next if req.is_a? String
-          userout "Target #{target} requirement #{req.to_s} is not a string: #{fullname} : #{index}"
+          userout "Target #{target} requirement #{req} is not a string: #{fullname} : #{index}"
           return nil
         end
       else
@@ -187,11 +187,11 @@ def load_rulefile(filename, current_directory, parent_includes = [])
 end
 
 if $RULEFILE.nil?
-  $RULEFILE = "Rulefile"
+  $RULEFILE = 'Rulefile'
   $root_dir = Dir.pwd
 else
   $root_dir = File.dirname($RULEFILE)
-  $root_dir = Dir.pwd() if $root_dir == '.'
+  $root_dir = Dir.pwd if $root_dir == '.'
   $RULEFILE = File.basename($RULEFILE)
 end
 rules = load_rulefile($RULEFILE, $root_dir)
@@ -214,7 +214,7 @@ end
 todo = ARGV.clone
 todo.uniq!
 needed = Hash.new(nil)
-while !todo.empty?
+until todo.empty?
   tgt = todo.pop
   next if needed.key? tgt
   rule = target2rule[tgt]
@@ -236,31 +236,30 @@ def all_needs(rule, needed, full)
       all_needs(needed[name], needed, full)
     end
   end
-  return full
+  full
 end
 
-needed.each_pair do |target, rule|
+needed.each_value do |rule|
   # Find full set of what this needs.
   needs = all_needs(rule, needed, [])
   needs.shift # Name of rule itself is the first item.
-  rule[:needs] = { }
+  rule[:needs] = {}
   needs.each { |name| rule[:needs][name] = nil }
 end
 
 failed = false
 needed.each_pair do |target, rule|
   needers = []
-  rule[:needs].each_pair do |tgt, r|
+  rule[:needs].each_key do |tgt|
     r = needed[tgt]
     needers.push(r) if r[:needs].key? target
   end
-  unless needers.empty?
-    userout "#{fileline(rule)} : #{target} both needs and is needed by:"
-    needers.each do |r|
-      userout "  #{fileline(r)} : #{r[:target]}"
-    end
-    failed = true
+  next if needers.empty?
+  userout "#{fileline(rule)} : #{target} both needs and is needed by:"
+  needers.each do |r|
+    userout "  #{fileline(r)} : #{r[:target]}"
   end
+  failed = true
 end
 exit(2) if failed
 
@@ -274,21 +273,21 @@ def compare(a, b)
   if aidx.nil?
     if bidx.nil?
       c = a[:needs].size <=> b[:needs].size
-      return c unless c == 0
+      return c unless c.zero?
       return a[:commands].size <=> b[:commands].size
     end
-    return 1
+    1
   else
     return 1 if bidx.nil?
-    return aidx <=> bidx
+    aidx <=> bidx
   end
 end
 order.sort! { |a, b| compare(a, b) }
 
 # Final order correctness check.
-fulfilled = Hash.new()
+fulfilled = {}
 order.each do |rule|
-  rule[:needs].keys.each do |req|
+  rule[:needs].each_key do |req|
     next if fulfilled.key? req
     userout "#{fileline(rule)} : #{rule[:target]} unfulfilled requirement #{req}"
     exit 2
@@ -321,7 +320,7 @@ class Handlers
   end
 
   def rule_source
-    @rule.nil? ? nil : @rule.fetch(:load, { }).fetch(:source, nil)
+    @rule&.dig(:load, :source)
   end
 
   def expand(item, info, seen = [])
@@ -334,7 +333,7 @@ class Handlers
     end
     if item.is_a? Hash
       info.push '{'
-      result = { }
+      result = {}
       item.each_pair { |k, v| result[k] = expand(v, info, seen) }
       info.push '}'
       return result
@@ -394,22 +393,20 @@ class Handlers
         break
       end
       if name.nil?
-        userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} match for dictionary keys not found."
+        userout "#{fileline(rule)} : #{rule[:target]} #{cmd} match for dictionary keys not found."
         return false
       end
+    elsif expanded.is_a? String
+      name = expanded
+    elsif expanded.is_a? Array
+      name = expanded.first
     else
-      if expanded.is_a? String
-        name = expanded
-      elsif expanded.is_a? Array
-        name = expanded.first
-      else
-        userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unexpected type for command: #{expanded.class.name}"
-        return false
-      end
+      userout "#{fileline(rule)} : #{rule[:target]} #{cmd} unexpected type for command: #{expanded.class.name}"
+      return false
     end
     handler = @handlers[name]
     if handler.nil?
-      userout "#{fileline(rule)} : #{rule[:target]} #{cmd.to_s} unknown command: #{name}"
+      userout "#{fileline(rule)} : #{rule[:target]} #{cmd} unknown command: #{name}"
       return false
     end
     userout("Command: #{name}") if $FOLLOW == 2
@@ -466,7 +463,7 @@ class CommentCommand < Command
     super('comment', 1000000)
   end
 
-  def handle(cmd)
+  def handle(_cmd)
     true
   end
 end
@@ -480,7 +477,7 @@ class SetCommand < Command
   def handle(cmd)
     return false unless assert(cmd, 3)
     $handlers.variables[cmd[1]] = cmd.size == 3 ? cmd[2] : cmd[2...cmd.size]
-    return true
+    true
   end
 end
 SetCommand.new
@@ -569,8 +566,8 @@ class RunBase < Command
     error: [ 'run', 'error', '*' ],
     note: {
       run_error_input_failed: [ 'run', 'error', 'input', 'failed' ],
-      run_child_error_output_format: [
-        [ 'run', 'error', 'format' ], [ 'error', 'format' ] ]
+      run_child_error_output_format:
+        [ [ 'run', 'error', 'format' ], [ 'error', 'format' ] ]
     },
     exitcode: [ 'run', 'exit', '?' ],
     bytes: [ 'run', 'bytes', '?', '*' ]
@@ -588,7 +585,7 @@ class RunBase < Command
   def message_maker(action, message, vars)
     out = []
     case action.first
-    when :note then
+    when :note
       case action.last
       when :run_error_input_failed
         out.push "Output from #{message[0]} failed."
@@ -605,7 +602,7 @@ class RunBase < Command
           @prev_bytes_id = id
         end
       end
-      out.push (vars.map { |c| c.chr }).join
+      out.push vars.map(&:chr).join
     end
     userout(out) unless $QUIET
     !out.empty?
@@ -632,7 +629,7 @@ class RunCommand < RunBase
     super('run')
     @action = PatternAction.new([
       { return: [ 'run', 'running', '?' ],
-        error: [ 'run', 'terminated', '?' ]},
+        error: [ 'run', 'terminated', '?' ] },
       @@actions_run_common ], [ @msgmaker, $terminator ])
   end
 
@@ -681,7 +678,7 @@ class FeedCommand < Command
   def initialize
     super('feed')
     @action = PatternAction.new(
-      [ { :error => [ 'error', '*' ] } ],
+      [ { error: [ 'error', '*' ] } ],
       [ $terminator ])
   end
 end
@@ -867,10 +864,10 @@ class ShellCommand < Command
       userout "Shell run exception:\n#{e}"
       return false
     ensure
-      stdin.close unless stdin.nil?
-      rd_out.close unless rd_out.nil?
-      rd_err.close unless rd_err.nil?
-      wait.join unless wait.nil?
+      stdin&.close
+      rd_out&.close
+      rd_err&.close
+      wait&.join
       temp.close!
     end
     exitcode.zero?
@@ -899,10 +896,9 @@ end
 RubyCommand.new
 
 
-def notification_check(action, message, vars)
+def notification_check(action, message, _vars)
   case action.first
-  when :data_error then $handlers.set_error(message.to_s)
-  when :error then $handlers.set_error(message.to_s)
+  when :data_error, :error then $handlers.set_error(message.to_s)
   end
 end
 ntf_check = proc { |act, msg, vars| notification_check(act, msg, vars) }

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Copyright © 2019-2021 Ismo Kärkkäinen
+# Copyright © 2019-2022 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'optparse'
@@ -65,7 +65,7 @@ DatalackeyProcess.options_for_OptionParser(parser, true,
 parser.parse!
 
 if ARGV.empty?
-  $USEROUT.puts "No state files."
+  $USEROUT.puts 'No state files.'
   exit 1
 end
 
@@ -86,12 +86,12 @@ class Machine
   def initialize
     @commands = Hash.new(nil)
     @variables = Hash.new(nil)
-    @skip_expand = { }
+    @skip_expand = {}
     @signal_mutex = Mutex.new
     @signal = nil
     @forced_state = nil
     @state_mutex = Mutex.new
-    @label2signal = { }
+    @label2signal = {}
     @state = nil
     @state_name = nil
     @machine = nil
@@ -100,7 +100,7 @@ class Machine
   def register(name, object, expand_skip_count = 0)
     raise ArgumentError, 'Command name is not a string.' unless name.is_a? String
     @commands[name] = object
-    @skip_expand[name] = expand_skip_count if expand_skip_count > 0
+    @skip_expand[name] = expand_skip_count if expand_skip_count.positive?
   end
 
   def get_binding
@@ -117,7 +117,7 @@ class Machine
     end
     if item.is_a? Hash
       info.push '{'
-      result = { }
+      result = {}
       item.each_pair { |k, v| result[k] = expand(v, info, seen) }
       info.push '}'
       return result
@@ -166,7 +166,7 @@ class Machine
   end
 
   def state_source
-    @state.nil? ? nil : @state.fetch(:load, { }).fetch(:source, nil)
+    @state&.dig(:load, :source)
   end
 
   def run_state(state, name)
@@ -192,7 +192,6 @@ class Machine
         set_error e.to_s
         return
       end
-      handler = nil
       name = nil
       if expanded.is_a? Hash
         @commands.each_key do |key|
@@ -204,15 +203,13 @@ class Machine
           set_error('Match for dictionary keys not found.')
           break
         end
+      elsif expanded.is_a? String
+        name = expanded
+      elsif expanded.is_a? Array
+        name = expanded.first
       else
-        if expanded.is_a? String
-          name = expanded
-        elsif expanded.is_a? Array
-          name = expanded.first
-        else
-          set_error("Unexpected type for command: #{expanded.class.name}")
-          break
-        end
+        set_error("Unexpected type for command: #{expanded.class.name}")
+        break
       end
       handler = @commands[name]
       set_error("Unknown command: #{name}") if handler.nil?
@@ -228,7 +225,7 @@ class Machine
     last_state_name = '__terminate_all'
     finalized = false
     name = initial_state_name
-    signal2state = { } # Only changes when state has new global mapping.
+    signal2state = {} # Only changes when state has new global mapping.
     loop do
       userout($lackey_stderr.getlines) unless $QUIET
       finalized = true if name == last_state_name
@@ -239,13 +236,13 @@ class Machine
       state = states[name]
       signal2state = state.fetch('global_signal2state', signal2state)
       @state_mutex.synchronize do
-        @label2signal = state.fetch('label2signal', { })
+        @label2signal = state.fetch('label2signal', {})
         @state = state # Command may need e.g. the location of the state file.
         @state_name = name
       end
       run_state(state, name)
       @state_mutex.synchronize do
-        @label2signal = { }
+        @label2signal = {}
         @state = nil
         @state_name = nil
       end
@@ -258,11 +255,10 @@ class Machine
         @forced_state = nil
       end
       name = nil unless sig == '__jump' # Jump may have been "interrupted".
-      if name.nil?
-        name = state.fetch('signal2state', { }).fetch(sig, nil)
-        name = signal2state.fetch(sig, nil) if name.nil?
-        break if name.nil?
-      end
+      next unless name.nil?
+      name = state.fetch('signal2state', {}).fetch(sig, nil)
+      name = signal2state.fetch(sig, nil) if name.nil?
+      break if name.nil?
     end
     return unless !finalized && states.key?(last_state_name)
     run_state(states[last_state_name], last_state_name)
@@ -315,8 +311,7 @@ class CommentCommand < Command
     super('comment', 1000000)
   end
 
-  def handle(cmd)
-  end
+  def handle(cmd) end
 end
 CommentCommand.new
 
@@ -620,10 +615,8 @@ class WaitSignalCommand < Command
     super('wait_signal')
   end
 
-  def handle(cmd)
-    while $machine.get_signal.nil?
-      sleep(0.2)
-    end
+  def handle(_cmd)
+    sleep(0.2) while $machine.get_signal.nil?
   end
 end
 WaitSignalCommand.new
@@ -786,10 +779,10 @@ class ShellCommand < Command
     rescue StandardError => e
       $machine.set_error("Shell run exception:\n#{e}")
     ensure
-      stdin.close unless stdin.nil?
-      rd_out.close unless rd_out.nil?
-      rd_err.close unless rd_err.nil?
-      wait.join unless wait.nil?
+      stdin&.close
+      rd_out&.close
+      rd_err&.close
+      wait&.join
       temp.close!
     end
   end
@@ -874,7 +867,7 @@ def load_statefile(filename, current_directory, parent_includes = [])
     userout "Not a top level array: #{filename} from #{current_directory}"
     return nil
   end
-  states = { }
+  states = {}
   contents.each_index do |index|
     item = contents[index]
     common = { load: { source: fullname, index: index } }
@@ -901,7 +894,7 @@ def load_statefile(filename, current_directory, parent_includes = [])
           end
         end
         commands.each_index do |k|
-          commands[k] = commands[k].split(' ') if commands[k].is_a? String
+          commands[k] = commands[k].split if commands[k].is_a? String
         end
         separated = common.clone
         separated[:commands] = commands
@@ -937,7 +930,7 @@ if !$OVERWRITE_ACTION.nil? && !$overwrites.empty?
 end
 
 unless states['__setup'].key? 'signal2state'
-  states['__setup']['signal2state'] = { }
+  states['__setup']['signal2state'] = {}
 end
 unless states['__setup']['signal2state'].key? nil
   states['__setup']['signal2state'][nil] = $first_state
@@ -948,8 +941,7 @@ def label_signal_check(action, message, vars)
   when :stored
     l2s = $machine.label2signal
     $machine.set_signal(l2s[vars.first]) if l2s.key? vars.first
-  when :data_error then $machine.set_error(message.to_s)
-  when :error then $machine.set_error(message.to_s)
+  when :data_error, :error then $machine.set_error(message.to_s)
   end
 end
 sig_check = proc { |act, msg, vs| label_signal_check(act, msg, vs) }

@@ -1,8 +1,9 @@
+# frozen_string_literal: true
+
 Gem::Specification.new do |s|
   s.name        = 'datalackeytools'
   s.version     = '0.3.4'
-  s.date        = '2021-10-15'
-  s.summary     = "Tools for using datalackey."
+  s.summary     = 'Tools for using datalackey.'
   s.description = %q(Tools for using datalackey.
 
 For examples of use, see https://github.com/ismo-karkkainen/datalackeytools
@@ -26,4 +27,5 @@ Licensed under Universal Permissive License, see LICENSE.txt.
   s.executables << 'object2files'
   s.homepage    = 'https://xn--ismo-krkkinen-gfbd.fi/datalackeytools/index.html'
   s.license     = 'UPL-1.0'
+  s.required_ruby_version = '>= 2.7.0'
 end

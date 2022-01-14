@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright © 2019-2021 Ismo Kärkkäinen
+# Copyright © 2019-2022 Ismo Kärkkäinen
 # Licensed under Universal Permissive License. See LICENSE.txt.
 
 require 'json'
@@ -155,8 +155,8 @@ class PatternAction < NoPatternNoAction
   def initialize(action_maps_array, message_callables = [])
     raise ArgumentError, 'action_maps_array is empty' unless action_maps_array.is_a?(Array) && !action_maps_array.empty?
     super()
-    @pattern2act = { }
-    @fixed2act = { }
+    @pattern2act = {}
+    @fixed2act = {}
     @generators = message_callables.is_a?(Array) ? message_callables.clone : [ message_callables ]
     action_maps_array.each do |m|
       raise ArgumentError, 'Action map is not a map.' unless m.is_a? Hash
@@ -213,7 +213,7 @@ class PatternAction < NoPatternNoAction
   end
 
   def replace_identifier(identifier, p2a)
-    altered = { }
+    altered = {}
     p2a.each_pair do |pattern, a|
       p = []
       pattern.each { |item| p.push(item == :identifier ? identifier : item) }
@@ -329,17 +329,15 @@ class DatalackeyIO
     @return_condition = ConditionVariable.new
     @dataprocess_mutex = Mutex.new
     @data = Hash.new(0)
-    @process = { }
-    @children = { }
-    @version = { }
+    @process = {}
+    @children = {}
+    @version = {}
     @read_datalackey = Thread.new do
       accum = []
       loop do
         begin
           raw = @from_datalackey.readpartial(32768)
-        rescue IOError
-          break
-        rescue EOFError
+        rescue IOError, EOFError
           break
         end
         loc = raw.index("\n")
@@ -350,7 +348,7 @@ class DatalackeyIO
           joined = accum.join
           accum.clear
           next if joined.empty?
-          from_datalackey_echo_callable.call(joined) unless from_datalackey_echo_callable.nil?
+          from_datalackey_echo_callable&.call(joined)
           msg = JSON.parse joined
           # See if we are interested in it.
           if msg.first.nil?
@@ -435,20 +433,18 @@ class DatalackeyIO
           # Deal with user-provided PatternAction (or NoPatternNoAction).
           tracker = trackers.first
           act, vars = tracker.best_match(msg)
-          unless act.nil?
-            act.each do |item|
-              tracker.generators.each do |p|
-                break if p.call(item, msg, vars)
-              end
-              next unless msg.first == @waiting
-              case item.first
-              when :return, 'return'
-                finish = true
-                last = act if last.nil?
-              when :error, 'error'
-                finish = true
-                last = act
-              end
+          act&.each do |item|
+            tracker.generators.each do |p|
+              break if p.call(item, msg, vars)
+            end
+            next unless msg.first == @waiting
+            case item.first
+            when :return, 'return'
+              finish = true
+              last = act if last.nil?
+            when :error, 'error'
+              finish = true
+              last = act
             end
           end
           # Check internal PatternAction.
@@ -467,12 +463,11 @@ class DatalackeyIO
               end
             end
           end
-          if finish
-            tracker.message = msg
-            tracker.exit = last
-            @tracked_mutex.synchronize { @waiting = nil }
-            @return_mutex.synchronize { @return_condition.signal }
-          end
+          next unless finish
+          tracker.message = msg
+          tracker.exit = last
+          @tracked_mutex.synchronize { @waiting = nil }
+          @return_mutex.synchronize { @return_condition.signal }
         end
         accum.push(raw) unless raw.empty?
       end
@@ -480,19 +475,20 @@ class DatalackeyIO
       @return_mutex.synchronize { @return_condition.signal }
     end
     # Outside thread block.
-    send(PatternAction.new([{ version: [ 'version', '', '?' ] }], [
-      proc do |action, message, vars|
-        if action.first == :version
-          @syntax = vars.first['commands']
-          @version = { }
-          vars.first.each_pair do |key, value|
-            @version[key] = value if value.is_a? Integer
+    send(PatternAction.new([{ version: [ 'version', '', '?' ] }],
+      [
+        proc do |action, _message, vars|
+          if action.first == :version
+            @syntax = vars.first['commands']
+            @version = {}
+            vars.first.each_pair do |key, value|
+              @version[key] = value if value.is_a? Integer
+            end
+            true
+          else false
           end
-          true
-        else false
         end
-      end
-    ]), ['version'])
+      ]), ['version'])
   end
 
   def data
@@ -542,10 +538,8 @@ class DatalackeyIO
     return tracker if id.nil? # There will be no responses.
     @return_mutex.synchronize { @return_condition.wait(@return_mutex) }
     tracker.status = true
-    unless tracker.exit.nil?
-      tracker.exit.each do |item|
-        tracker.status = false if item.first == :error || item.first == 'error'
-      end
+    tracker.exit&.each do |item|
+      tracker.status = false if item.first == :error || item.first == 'error'
     end
     tracker
   end
@@ -554,14 +548,14 @@ class DatalackeyIO
     @to_datalackey_mutex.synchronize do
       @to_datalackey.write json_as_string
       @to_datalackey.flush
-      @to_datalackey_echo.call(json_as_string) unless @to_datalackey_echo.nil?
+      @to_datalackey_echo&.call(json_as_string)
     rescue Errno::EPIPE
       # Should do something in this case. Child process died?
     end
   end
 
-  def verify(command)
-    @syntax.nil? ? nil : true
+  def verify(_command)
+    @syntax.nil? ? nil : true # Perform actual check some day...
   end
 end
 
@@ -576,10 +570,8 @@ class StoringReader
       loop do
         begin
           raw = @input.readpartial(32768)
-        rescue IOError
+        rescue IOError, EOFError
           break # It is possible that close happens in another thread.
-        rescue EOFError
-          break
         end
         loc = raw.index("\n")
         until loc.nil?
@@ -618,10 +610,8 @@ class DiscardReader
     @reader = Thread.new do
       loop do
         @input.readpartial(32768)
-      rescue IOError
+      rescue IOError, EOFError
         break # It is possible that close happens in another thread.
-      rescue EOFError
-        break
       end
     end
   end
